@@ -5,12 +5,39 @@ const vm = require('node:vm');
 const { test } = require('node:test');
 const ts = require('typescript');
 
+// Use Expo's actual form patch and encoder, with the native Blob limitation enforced.
+class NativeBlob {
+  constructor() { throw new Error('Creating blobs from ArrayBuffer is not supported'); }
+}
+function loadExpo(relativePath) {
+  const filename = path.resolve(__dirname, '../node_modules/expo/src', relativePath + '.ts');
+  const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exports = {};
+  vm.runInNewContext(code, {
+    exports, Blob: NativeBlob, TextEncoder, Uint8Array,
+    require: (name) => loadExpo(path.relative(path.resolve(__dirname, '../node_modules/expo/src'),
+      path.resolve(path.dirname(filename), name))),
+  }, { filename });
+  return exports;
+}
+const ExpoFormData = loadExpo('winter/FormData').installFormDataPatch(class {
+  constructor() { this._parts = []; }
+});
+const { convertFormDataAsync } = loadExpo('winter/fetch/convertFormData');
+
 // Exercise the actual TypeScript service without loading the native Expo runtime.
 function loadService(endpoint, fetch, readFile = async () => new TextEncoder().encode('receipt file bytes').buffer) {
   function load(relativePath) {
+    if (relativePath === 'expo/fetch') return { fetch: async (url, options) => {
+      const encoded = await convertFormDataAsync(options.body);
+      return fetch(url, { ...options, encoded });
+    } };
     if (relativePath === 'expo-file-system') return { File: class {
       constructor(uri) { this.uri = uri; }
-      arrayBuffer() { return readFile(this.uri); }
+      async bytes() { return new Uint8Array(await readFile(this.uri)); }
+      arrayBuffer() { throw new Error('Upload should use File.bytes()'); }
     } };
     const filename = path.resolve(__dirname, '../src/services', relativePath + '.ts');
     const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
@@ -19,7 +46,7 @@ function loadService(endpoint, fetch, readFile = async () => new TextEncoder().e
     const exports = {};
     vm.runInNewContext(code, {
       exports, require: load, process: { env: { EXPO_PUBLIC_RECEIPT_AI_ENDPOINT: endpoint } },
-      fetch, AbortController, setTimeout, clearTimeout, Blob, FormData,
+      AbortController, setTimeout, clearTimeout, Blob: NativeBlob, FormData: ExpoFormData,
     }, { filename });
     return exports;
   }
@@ -45,8 +72,8 @@ test('uploads the selected asset and returns real sanitized items', async () => 
   const service = loadService('https://receipt.example/extract', async (url, options) => {
     assert.equal(url, 'https://receipt.example/extract');
     const upload = options.body.get('receipt');
-    assert.ok(upload instanceof Blob);
-    assert.equal(await upload.text(), 'receipt file bytes');
+    assert.equal(typeof upload.bytes, 'function');
+    assert.equal(new TextDecoder().decode(await upload.bytes()), 'receipt file bytes');
     assert.equal(upload.name, asset.name);
     assert.equal(upload.type, asset.mimeType);
     assert.equal(options.body.get('privacy_mode'), 'no-payment-data');
@@ -67,10 +94,13 @@ test('uploads the selected asset and returns real sanitized items', async () => 
 test('uploads PDF bytes with the selected filename and MIME type', async () => {
   const pdf = { uri: 'file:///cache/upload', name: 'shop receipt.pdf', mimeType: 'application/pdf' };
   const service = loadService(undefined, async (url, options) => {
-    const multipart = new Request(url, options);
+    const multipart = new Request(url, {
+      method: 'POST', body: options.encoded.body,
+      headers: { 'Content-Type': `multipart/form-data; boundary=${options.encoded.boundary}` },
+    });
     const parsed = await multipart.formData();
     const upload = parsed.get('receipt');
-    assert.equal(upload.name, pdf.name);
+    assert.equal(decodeURIComponent(upload.name), pdf.name);
     assert.equal(upload.type, pdf.mimeType);
     assert.equal(await upload.text(), '%PDF-test');
     return response(result);

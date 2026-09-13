@@ -1,4 +1,5 @@
 import { File } from 'expo-file-system';
+import { fetch } from 'expo/fetch';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
 import { sanitizeItemText, sanitizeMerchant } from './privacy';
 
@@ -7,6 +8,16 @@ const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electr
 const DEFAULT_RECEIPT_AI_ENDPOINT =
   'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract';
 const endpoint = process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT?.trim() || DEFAULT_RECEIPT_AI_ENDPOINT;
+
+// Keep picker metadata even when the cached file has a different name or extension.
+class ReceiptUploadFile extends File {
+  constructor(private readonly asset: ReceiptAsset) {
+    super(asset.uri);
+    Object.defineProperty(this, 'type', { value: asset.mimeType });
+  }
+
+  get name() { return this.asset.name; }
+}
 
 function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
   const items: ReceiptItem[] = (input.items ?? [])
@@ -39,11 +50,10 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
-    // Expo's fetch requires file bytes; React Native URI-only parts are unsupported.
-    const file = new File(asset.uri);
-    const receipt = new Blob([await file.arrayBuffer()], { type: asset.mimeType });
+    // Expo reads File.bytes() directly without React Native's unsupported Blob conversion.
+    const receipt = new ReceiptUploadFile(asset);
     const form = new FormData();
-    form.append('receipt', receipt, asset.name);
+    form.append('receipt', receipt);
     form.append('privacy_mode', 'no-payment-data');
 
     const response = await fetch(endpoint, {
