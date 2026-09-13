@@ -1,15 +1,15 @@
-import { File } from 'expo-file-system';
-import { demoReceipt } from '../data';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
 import { sanitizeItemText, sanitizeMerchant } from './privacy';
+
+const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other']);
 
 const endpoint = process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT?.trim();
 
 function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
   const items: ReceiptItem[] = (input.items ?? [])
     .map((item, index) => ({
-      ...item,
-      id: item.id || `item-${Date.now()}-${index}`,
+      id: `item-${Date.now()}-${index}`,
+      category: categories.has(item.category) ? item.category : 'Other',
       originalText: sanitizeItemText(item.originalText || item.name || ''),
       name: sanitizeItemText(item.name || item.originalText || 'Unknown item'),
       quantity: Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 1,
@@ -19,8 +19,10 @@ function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
     .filter((item) => item.name !== '[PAYMENT INFORMATION REMOVED]' && item.originalText !== '[PAYMENT INFORMATION REMOVED]');
 
   return {
-    ...input,
     merchant: sanitizeMerchant(input.merchant || 'Unknown merchant'),
+    purchaseDate: input.purchaseDate,
+    total: input.total,
+    source: 'ai',
     currency: 'EUR',
     items,
   };
@@ -28,25 +30,46 @@ function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
 
 export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedReceipt> {
   if (!endpoint) {
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    return demoReceipt;
+    throw new Error('Receipt reading is not configured in this build. Configure the receipt extraction service and restart the app, then retry.');
   }
 
   const form = new FormData();
-  const file = new File(asset.uri);
-  form.append('receipt', file as unknown as Blob);
+  // React Native's multipart transport reads the selected local file by URI.
+  form.append('receipt', { uri: asset.uri, name: asset.name, type: asset.mimeType } as unknown as Blob);
   form.append('privacy_mode', 'no-payment-data');
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    body: form,
-    headers: { Accept: 'application/json' },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: form,
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    throw new Error(`Receipt extraction failed (${response.status})`);
+    if (!response.ok) {
+      throw new Error(`Receipt extraction failed (${response.status})`);
+    }
+
+    const result = (await response.json()) as ExtractedReceipt;
+    if (!result || result.source === 'demo' || typeof result.merchant !== 'string' ||
+        typeof result.purchaseDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(result.purchaseDate) ||
+        !Number.isFinite(result.total) || result.total < 0 || result.currency !== 'EUR' ||
+        !Array.isArray(result.items) || result.items.some((item) => !item ||
+          typeof item.name !== 'string' || typeof item.originalText !== 'string' ||
+          typeof item.category !== 'string' || !Number.isFinite(item.price))) {
+      throw new Error('The receipt service returned an invalid result. Please try again.');
+    }
+    const sanitized = sanitizeExtractedReceipt(result);
+    if (sanitized.items.length === 0) {
+      throw new Error('No purchase items could be read. Try a clearer photo of the full receipt.');
+    }
+    return sanitized;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Receipt reading timed out. Please try again.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const result = (await response.json()) as ExtractedReceipt;
-  return sanitizeExtractedReceipt({ ...result, source: 'ai' });
 }

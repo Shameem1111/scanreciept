@@ -15,6 +15,7 @@ export function ScanScreen() {
   const [asset, setAsset] = useState<ReceiptAsset | null>(null);
   const [extracted, setExtracted] = useState<ExtractedReceipt | null>(null);
   const [busy, setBusy] = useState(false);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
 
   async function scanCamera() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -22,6 +23,7 @@ export function ScanScreen() {
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (!result.canceled) {
       const image = result.assets[0];
+      if (!image) return;
       const next = { uri: image.uri, name: image.fileName ?? `receipt-${Date.now()}.jpg`, mimeType: image.mimeType ?? 'image/jpeg' };
       setAsset(next);
       setExtracted(null);
@@ -33,6 +35,7 @@ export function ScanScreen() {
     const result = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf'], copyToCacheDirectory: true });
     if (!result.canceled) {
       const file = result.assets[0];
+      if (!file) return;
       const next = { uri: file.uri, name: file.name, mimeType: file.mimeType ?? 'application/octet-stream' };
       setAsset(next);
       setExtracted(null);
@@ -42,16 +45,19 @@ export function ScanScreen() {
 
   async function runExtraction(nextAsset: ReceiptAsset) {
     setBusy(true);
+    setExtracted(null);
+    setExtractionError(null);
     try {
       setExtracted(await extractReceipt(nextAsset));
     } catch (error) {
-      Alert.alert('Could not read receipt', error instanceof Error ? error.message : 'Unknown error');
+      setExtractionError(error instanceof Error ? error.message : 'Could not read receipt. Please try again.');
     } finally {
       setBusy(false);
     }
   }
 
   async function useDemo() {
+    setExtractionError(null);
     setAsset({ uri: '', name: 'demo-receipt.jpg', mimeType: 'image/jpeg' });
     setExtracted(demoReceipt);
   }
@@ -98,11 +104,18 @@ export function ScanScreen() {
 
       <View style={styles.actions}>
         <PrimaryButton label="📷  Scan Receipt" onPress={scanCamera} disabled={busy} />
-        <SecondaryButton label="⬆  Upload Receipt" onPress={uploadReceipt} />
-        <SecondaryButton label="Use demo receipt" onPress={useDemo} />
+        <SecondaryButton label="⬆  Upload Receipt" onPress={uploadReceipt} disabled={busy} />
+        <SecondaryButton label="Use demo receipt" onPress={useDemo} disabled={busy} />
       </View>
 
       {busy && <ActivityIndicator color={colors.primary} size="large" style={{ marginVertical: 24 }} />}
+      {extractionError && (
+        <Card>
+          <Text style={styles.merchant} accessibilityRole="alert">Could not read receipt</Text>
+          <Text style={styles.small}>{extractionError}</Text>
+          {asset?.uri ? <SecondaryButton label="Retry reading receipt" onPress={() => runExtraction(asset)} disabled={busy} /> : null}
+        </Card>
+      )}
 
       {asset?.uri && asset.mimeType.startsWith('image/') ? <Image source={{ uri: asset.uri }} style={styles.preview} resizeMode="cover" /> : null}
       {asset && !asset.uri ? <Card><Text style={styles.small}>Demo receipt selected.</Text></Card> : null}
