@@ -14,6 +14,10 @@ Deploy command: npx wrangler deploy
 Path: /backend/receiptmind-worker
 ```
 
+The Worker configuration pins Wrangler to this directory's `tsconfig.json`, so
+Cloudflare does not try to resolve the Expo app's root TypeScript configuration.
+Preview URLs are disabled; the stable `workers.dev` endpoint remains enabled.
+
 Keep Cloudflare Access disabled for the mobile endpoint. Add production authentication and Cloudflare rate limiting before opening the service to general users.
 
 ## Required secret
