@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
 import { sanitizeItemText, sanitizeMerchant } from './privacy';
 
@@ -35,14 +36,16 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
     throw new Error('Receipt reading is not configured in this build. Configure the receipt extraction service and restart the app, then retry.');
   }
 
-  const form = new FormData();
-  // React Native's multipart transport reads the selected local file by URI.
-  form.append('receipt', { uri: asset.uri, name: asset.name, type: asset.mimeType } as unknown as Blob);
-  form.append('privacy_mode', 'no-payment-data');
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
+    // Expo's fetch requires file bytes; React Native URI-only parts are unsupported.
+    const file = new File(asset.uri);
+    const receipt = new Blob([await file.arrayBuffer()], { type: asset.mimeType });
+    const form = new FormData();
+    form.append('receipt', receipt, asset.name);
+    form.append('privacy_mode', 'no-payment-data');
+
     const response = await fetch(endpoint, {
       method: 'POST',
       body: form,

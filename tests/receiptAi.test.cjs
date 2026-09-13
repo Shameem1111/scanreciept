@@ -6,8 +6,12 @@ const { test } = require('node:test');
 const ts = require('typescript');
 
 // Exercise the actual TypeScript service without loading the native Expo runtime.
-function loadService(endpoint, fetch) {
+function loadService(endpoint, fetch, readFile = async () => new TextEncoder().encode('receipt file bytes').buffer) {
   function load(relativePath) {
+    if (relativePath === 'expo-file-system') return { File: class {
+      constructor(uri) { this.uri = uri; }
+      arrayBuffer() { return readFile(this.uri); }
+    } };
     const filename = path.resolve(__dirname, '../src/services', relativePath + '.ts');
     const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -15,11 +19,7 @@ function loadService(endpoint, fetch) {
     const exports = {};
     vm.runInNewContext(code, {
       exports, require: load, process: { env: { EXPO_PUBLIC_RECEIPT_AI_ENDPOINT: endpoint } },
-      fetch, AbortController, setTimeout, clearTimeout,
-      FormData: class {
-        fields = new Map();
-        append(key, value) { this.fields.set(key, value); }
-      },
+      fetch, AbortController, setTimeout, clearTimeout, Blob, FormData,
     }, { filename });
     return exports;
   }
@@ -33,19 +33,23 @@ const result = {
 };
 const response = (value) => ({ ok: true, json: async () => value });
 
-test('missing endpoint rejects without uploading or substituting demo items', async () => {
-  const service = loadService(' ', () => assert.fail('Must not upload without an endpoint'));
-  await assert.rejects(service.extractReceipt(asset), /not configured/);
+test('blank endpoint uses the configured default service', async () => {
+  const service = loadService(' ', async (url) => {
+    assert.equal(url, 'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract');
+    return response(result);
+  });
+  await service.extractReceipt(asset);
 });
 
 test('uploads the selected asset and returns real sanitized items', async () => {
   const service = loadService('https://receipt.example/extract', async (url, options) => {
     assert.equal(url, 'https://receipt.example/extract');
-    const upload = options.body.fields.get('receipt');
-    assert.equal(upload.uri, asset.uri);
+    const upload = options.body.get('receipt');
+    assert.ok(upload instanceof Blob);
+    assert.equal(await upload.text(), 'receipt file bytes');
     assert.equal(upload.name, asset.name);
     assert.equal(upload.type, asset.mimeType);
-    assert.equal(options.body.fields.get('privacy_mode'), 'no-payment-data');
+    assert.equal(options.body.get('privacy_mode'), 'no-payment-data');
     return response({ ...result, paymentReference: 'discard', items: [
       { ...result.items[0], paymentReference: 'discard' },
       { ...result.items[0], name: 'VISA **1234' },
@@ -58,6 +62,30 @@ test('uploads the selected asset and returns real sanitized items', async () => 
   assert.equal(actual.source, 'ai');
   assert.equal('paymentReference' in actual, false);
   assert.equal('paymentReference' in actual.items[0], false);
+});
+
+test('uploads PDF bytes with the selected filename and MIME type', async () => {
+  const pdf = { uri: 'file:///cache/upload', name: 'shop receipt.pdf', mimeType: 'application/pdf' };
+  const service = loadService(undefined, async (url, options) => {
+    const multipart = new Request(url, options);
+    const parsed = await multipart.formData();
+    const upload = parsed.get('receipt');
+    assert.equal(upload.name, pdf.name);
+    assert.equal(upload.type, pdf.mimeType);
+    assert.equal(await upload.text(), '%PDF-test');
+    return response(result);
+  }, async (uri) => {
+    assert.equal(uri, pdf.uri);
+    return new TextEncoder().encode('%PDF-test').buffer;
+  });
+  await service.extractReceipt(pdf);
+});
+
+test('unreadable local files fail before an upload', async () => {
+  const service = loadService(undefined, () => assert.fail('Must not upload'), async () => {
+    throw new Error('File unavailable');
+  });
+  await assert.rejects(service.extractReceipt(asset), /File unavailable/);
 });
 
 test('failed requests never return demo data', async () => {
