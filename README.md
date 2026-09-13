@@ -13,7 +13,7 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 - Privacy filter and data model intentionally exclude card numbers, IBAN/BIC, bank accounts, terminal IDs, authorization codes and payment references.
 - A deployable Cloudflare Worker proxies privacy-aware Gemini receipt extraction without exposing the Gemini key to the mobile app.
 
-When `EXPO_PUBLIC_RECEIPT_AI_ENDPOINT` is empty the app uses demo extraction so the complete mobile flow can be tested without an API key.
+The checked-in mobile configuration defaults to the deployed ReceiptMind Cloudflare Worker. `EXPO_PUBLIC_RECEIPT_AI_ENDPOINT` can override that public URL for another environment; AI-provider secrets remain server-side.
 
 ## Stack
 
@@ -41,7 +41,7 @@ Then scan the QR code with Expo Go on Android/iOS, or press `a` / `i` when an em
 Do not put a Gemini/OpenAI secret in Expo environment variables. Deploy the included Worker from `backend/receiptmind-worker`, add `GEMINI_API_KEY` as a Cloudflare encrypted secret, and set:
 
 ```bash
-EXPO_PUBLIC_RECEIPT_AI_ENDPOINT=https://receiptmind-api.<your-subdomain>.workers.dev/receipt/extract
+EXPO_PUBLIC_RECEIPT_AI_ENDPOINT=https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract
 ```
 
 For Cloudflare Git deployment, use `/backend/receiptmind-worker` as the project path, leave the build command blank, and use `npx wrangler deploy` as the deploy command. See [`backend/receiptmind-worker/README.md`](backend/receiptmind-worker/README.md) for setup details.

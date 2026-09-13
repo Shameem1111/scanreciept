@@ -3,7 +3,9 @@ import { sanitizeItemText, sanitizeMerchant } from './privacy';
 
 const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other']);
 
-const endpoint = process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT?.trim();
+const DEFAULT_RECEIPT_AI_ENDPOINT =
+  'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract';
+const endpoint = process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT?.trim() || DEFAULT_RECEIPT_AI_ENDPOINT;
 
 function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
   const items: ReceiptItem[] = (input.items ?? [])
