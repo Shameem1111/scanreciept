@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+dist/
+web-build/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.jks
+*.p8
+*.p12
+*.mobileprovision
