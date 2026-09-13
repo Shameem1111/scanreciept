@@ -8,6 +8,16 @@ const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electr
 const DEFAULT_RECEIPT_AI_ENDPOINT =
   'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract';
 const endpoint = process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT?.trim() || DEFAULT_RECEIPT_AI_ENDPOINT;
+const extractionErrors: Record<string, string> = {
+  PROVIDER_AUTH: 'The receipt AI service credentials need attention. The service owner must check the backend API key.',
+  PROVIDER_CONFIG: 'The receipt AI service is not configured correctly. The service owner must check the backend API key and model.',
+  PROVIDER_QUOTA: 'The receipt AI service scan limit has been reached. Try later; the service owner may need to check quota or billing.',
+  PROVIDER_UNAVAILABLE: 'The receipt AI service is temporarily unavailable. Please try again shortly.',
+  PROVIDER_TIMEOUT: 'Receipt reading timed out. Please try again.',
+  INVALID_AI_RESPONSE: 'The AI service returned an unreadable result. Please retry the receipt.',
+  UNREADABLE_RECEIPT: 'Could not reliably read the items or date. Try a clearer image of the complete German or English receipt.',
+  INVALID_UPLOAD: 'Receipt upload was invalid. Select the file again and retry.',
+};
 
 // Keep picker metadata even when the cached file has a different name or extension.
 class ReceiptUploadFile extends File {
@@ -64,6 +74,14 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
     });
 
     if (!response.ok) {
+      // Only display known messages, never raw provider errors or receipt contents.
+      const failure = await response.json().catch(() => null) as { code?: unknown } | null;
+      if (typeof failure?.code === 'string' && Object.hasOwn(extractionErrors, failure.code)) {
+        throw new Error(extractionErrors[failure.code]);
+      }
+      if (response.status === 502 || response.status === 503) {
+        throw new Error(`The receipt AI service could not complete extraction (${response.status}). Please retry. If this continues, the service owner needs to check the backend provider configuration and quota.`);
+      }
       throw new Error(`Receipt extraction failed (${response.status})`);
     }
 

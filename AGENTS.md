@@ -219,6 +219,8 @@ Do not allow an LLM to generate arbitrary SQL that is executed directly.
 
 ### Scan / upload
 
+Receipt extraction must support German, English, and mixed-language receipts. Preserve printed item text (including umlauts and ß); interpret German decimal commas and local date formats correctly. Keep category identifiers consistent with the existing schema.
+
 The primary actions must remain clearly separated:
 
 - **Scan Receipt** — camera

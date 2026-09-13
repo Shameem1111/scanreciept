@@ -44,4 +44,26 @@ Then run `npm run dev`. Do not commit `.dev.vars`.
 
 Accepted formats are JPEG, PNG, WebP, and PDF up to 10 MB. The response matches the mobile app's receipt extraction schema.
 
+Receipt reading supports German, English, and mixed-language receipts automatically. The prompt preserves printed item text and its language, recognizes German decimal commas and date formats, and returns numerical amounts and ISO dates. Currency support remains EUR. These instructions and response handling are covered by mocked-provider tests; real OCR accuracy must also be checked with representative receipts.
+
+## Extraction failures
+
+Deploy backend changes with `npm run deploy` after authenticating using `npx wrangler login`. Reloading Expo alone does not update the live Worker.
+
+Errors return a safe `code` and `error` message. The mobile app maps known codes to actionable messages without displaying raw provider output:
+
+| Code | Next step |
+| --- | --- |
+| `PROVIDER_AUTH` | Check the Worker's Gemini secret and provider permissions. |
+| `PROVIDER_CONFIG` | Check the secret, model availability, and request configuration. |
+| `PROVIDER_QUOTA` | Check Gemini quota/billing; retry after the limit resets. |
+| `PROVIDER_UNAVAILABLE` | Retry shortly; temporary provider 5xx responses receive one automatic retry. |
+| `PROVIDER_TIMEOUT` | Retry; the provider request has a 45-second overall timeout. |
+| `INVALID_AI_RESPONSE` | Retry; the model did not return parseable structured output. |
+| `UNREADABLE_RECEIPT` | Supply a clearer complete receipt showing the date and items. |
+
+Worker logs record only the failed provider HTTP status, never API keys, provider response bodies, or receipt contents. An old deployed Worker may still return generic 502 errors until redeployed. Its `/health` endpoint only confirms the Worker is running, not that Gemini credentials/quota are working.
+
+Run regression tests from the repository root using `node --test tests/*.test.cjs`, and typecheck both the app and this Worker with their respective `npm run typecheck` commands.
+
 The backend deliberately excludes and filters payment cards, masked card numbers, IBAN/BIC, bank accounts, authorization codes, payment references, and terminal/processor identifiers. The mobile client applies a second privacy filter before persistence.

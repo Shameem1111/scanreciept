@@ -119,8 +119,19 @@ test('unreadable local files fail before an upload', async () => {
 });
 
 test('failed requests never return demo data', async () => {
-  const service = loadService('https://receipt.example/extract', async () => ({ ok: false, status: 503 }));
+  const service = loadService('https://receipt.example/extract', async () => ({ ok: false, status: 503, json: async () => { throw new Error('not JSON'); } }));
   await assert.rejects(service.extractReceipt(asset), /503/);
+});
+
+test('provider error codes become actionable messages without exposing raw errors', async () => {
+  for (const [code, expected] of [['PROVIDER_AUTH', /API key/], ['PROVIDER_QUOTA', /quota or billing/], ['UNREADABLE_RECEIPT', /German or English/]]) {
+    const service = loadService(undefined, async () => ({ ok: false, status: 503, json: async () => ({ code, error: 'private provider detail' }) }));
+    await assert.rejects(service.extractReceipt(asset), (error) => {
+      assert.match(error.message, expected);
+      assert.equal(error.message.includes('private provider detail'), false);
+      return true;
+    });
+  }
 });
 
 test('rejects demo, malformed, and empty extraction responses', async () => {

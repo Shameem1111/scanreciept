@@ -6,6 +6,26 @@ interface Env {
 const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS = 250;
 const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+const PROVIDER_TIMEOUT_MS = 45_000;
+
+class ExtractionError extends Error {
+  constructor(readonly code: string, message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+function providerError(status: number): ExtractionError {
+  if (status === 401 || status === 403) {
+    return new ExtractionError('PROVIDER_AUTH', 'Receipt reading is unavailable because the AI service credentials need attention.', 503);
+  }
+  if (status === 429) {
+    return new ExtractionError('PROVIDER_QUOTA', 'The AI service scan limit has been reached. Try later; the service owner may need to check quota or billing.', 429);
+  }
+  if (status === 400 || status === 404) {
+    return new ExtractionError('PROVIDER_CONFIG', 'The AI service rejected the extraction request. The service owner needs to check the API key, model, and request configuration.', 503);
+  }
+  return new ExtractionError('PROVIDER_UNAVAILABLE', 'The AI service is temporarily unavailable. Please try again shortly.', 503);
+}
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -158,8 +178,8 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
 function extractGeminiJson(payload: unknown): unknown {
   if (!payload || typeof payload !== 'object') throw new Error('Invalid Gemini response');
-  const candidates = (payload as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }).candidates;
-  const text = candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('').trim();
+  const candidates = (payload as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }> }).candidates;
+  const text = candidates?.[0]?.content?.parts?.filter((part) => !part.thought).map((part) => part.text ?? '').join('').trim();
   if (!text) throw new Error('Gemini returned no structured receipt');
   const withoutFence = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   return JSON.parse(withoutFence);
@@ -171,42 +191,78 @@ async function extractReceipt(file: File, mimeType: string, env: Env): Promise<R
   const receiptBase64 = arrayBufferToBase64(await file.arrayBuffer());
   const prompt = [
     'Extract purchase-memory information from this receipt.',
+    'Read German, English, and mixed German/English receipts automatically, without requiring a language selection.',
     'Return only the requested JSON schema.',
     'Never extract, repeat, infer, classify, or return payment or banking information.',
     'Exclude card numbers (including masked numbers), card type, IBAN, BIC/SWIFT, account numbers,',
     'authorization codes, payment references, terminal IDs, processor identifiers, and online-banking data.',
     'Categorize every purchased line item independently.',
     'Keep originalText as printed and provide a normalized product name separately.',
+    'Preserve German umlauts and ÃŸ. Keep normalized names in the language of the printed item; do not translate originalText.',
+    'Interpret German amounts such as 1.234,56 as JSON number 1234.56, and English amounts such as 1,234.56 as 1234.56.',
+    'Interpret German dates such as 13.09.2026 as 2026-09-13. Use language and printed context for English dates; leave ambiguous dates empty.',
+    'Recognize Summe/Gesamt/Total and MwSt/USt/VAT. Totals, taxes and payment lines are not purchased items.',
     'Use low confidence when uncertain. Do not fabricate unreadable values.',
     'Return dates as YYYY-MM-DD. Return an empty date when it cannot be read reliably.',
     'ReceiptMind currently supports EUR; return EUR as currency.',
   ].join(' ');
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': env.GEMINI_API_KEY,
-    },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: prompt }] },
-      contents: [{
-        role: 'user',
-        parts: [
-          { text: 'Extract the allowed purchase information from this receipt.' },
-          { inlineData: { mimeType, data: receiptBase64 } },
-        ],
-      }],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-        responseJsonSchema: receiptSchema,
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+  try {
+    const options: RequestInit = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': env.GEMINI_API_KEY,
       },
-    }),
-  });
+      signal: controller.signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: prompt }] },
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: 'Extract the allowed purchase information from this receipt.' },
+            { inlineData: { mimeType, data: receiptBase64 } },
+          ],
+        }],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: 'application/json',
+          responseJsonSchema: receiptSchema,
+        },
+      }),
+    };
 
-  if (!response.ok) throw new Error(`Gemini request failed with status ${response.status}`);
-  return sanitizeExtraction(extractGeminiJson(await response.json()));
+    let response = await fetch(endpoint, options);
+    // Retry only transient provider failures, within the same overall timeout.
+    if ([500, 502, 503, 504].includes(response.status)) {
+      await response.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      response = await fetch(endpoint, options);
+    }
+    if (!response.ok) {
+      console.warn('receipt_extraction_provider_error', { status: response.status });
+      throw providerError(response.status);
+    }
+    let extracted: Record<string, unknown>;
+    try {
+      extracted = sanitizeExtraction(extractGeminiJson(await response.json()));
+    } catch {
+      if (controller.signal.aborted) throw new ExtractionError('PROVIDER_TIMEOUT', 'Receipt reading took too long. Please try again.', 504);
+      throw new ExtractionError('INVALID_AI_RESPONSE', 'The AI service could not return a readable receipt result. Please try again.', 502);
+    }
+    if (!(extracted.items as unknown[]).length || !extracted.purchaseDate) {
+      throw new ExtractionError('UNREADABLE_RECEIPT', 'Could not reliably read the items or purchase date. Use a clearer image of the complete German or English receipt.', 422);
+    }
+    return extracted;
+  } catch (error) {
+    if (controller.signal.aborted) throw new ExtractionError('PROVIDER_TIMEOUT', 'Receipt reading took too long. Please try again.', 504);
+    if (error instanceof ExtractionError) throw error;
+    throw new ExtractionError('PROVIDER_UNAVAILABLE', 'The AI service could not be reached. Please try again shortly.', 503);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export default {
@@ -218,7 +274,7 @@ export default {
     }
     if (url.pathname !== '/receipt/extract') return json({ error: 'Not found' }, 404);
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-    if (!env.GEMINI_API_KEY) return json({ error: 'Receipt extraction is not configured' }, 503);
+    if (!env.GEMINI_API_KEY?.trim()) return json({ code: 'PROVIDER_CONFIG', error: 'Receipt extraction is not configured' }, 503);
 
     const contentLength = Number(request.headers.get('content-length') ?? 0);
     if (contentLength > MAX_RECEIPT_BYTES + 1024 * 1024) {
@@ -226,7 +282,12 @@ export default {
     }
 
     try {
-      const form = await request.formData();
+      let form: FormData;
+      try {
+        form = await request.formData();
+      } catch {
+        return json({ code: 'INVALID_UPLOAD', error: 'Receipt upload was invalid. Select the file again and retry.' }, 400);
+      }
       const entry = form.get('receipt');
       if (!(entry instanceof File)) return json({ error: 'Multipart field "receipt" is required' }, 400);
       if (entry.size === 0) return json({ error: 'Receipt file is empty' }, 400);
@@ -237,8 +298,9 @@ export default {
       const mimeType = inferMimeType(entry);
       if (!mimeType) return json({ error: 'Use a JPEG, PNG, WebP, or PDF receipt.' }, 415);
       return json(await extractReceipt(entry, mimeType, env));
-    } catch {
+    } catch (error) {
       // Do not expose provider responses or receipt contents to the client or logs.
+      if (error instanceof ExtractionError) return json({ code: error.code, error: error.message }, error.status);
       return json({ error: 'Receipt extraction failed. Please try again.' }, 502);
     }
   },
