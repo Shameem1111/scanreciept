@@ -7,7 +7,7 @@ import { isReceiptAvailable, openReceipt, storageProviders } from '../services/s
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
 
-export function ReceiptDetailScreen({ receiptId, onBack }: { receiptId: string; onBack: () => void }) {
+export function ReceiptDetailScreen({ receiptId, onBack, backLabel = 'Back to purchases' }: { receiptId: string; onBack: () => void; backLabel?: string }) {
   const { receipts, updateReceipt } = useReceiptStore();
   const receipt = receipts.find(value => value.id === receiptId);
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -45,7 +45,7 @@ export function ReceiptDetailScreen({ receiptId, onBack }: { receiptId: string; 
   }
 
   return <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <SecondaryButton label={draft ? 'Cancel editing' : 'Back to purchases'} disabled={busy}
+    <SecondaryButton label={draft ? 'Cancel editing' : backLabel} disabled={busy}
       onPress={() => { if (draft) { setDraft(null); setError(''); } else onBack(); }} />
     <Text style={styles.title}>{draft ? 'Edit receipt' : 'Receipt details'}</Text>
     {!receipt ? <Text style={styles.text}>Receipt no longer exists.</Text> : <>

@@ -14,7 +14,7 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 - Local receipt-original storage in the app's Documents directory.
 - Tap a purchase to see its receipt, extracted item text, categories and original storage provider. Edit saved purchase details without changing the original reference or re-running extraction.
 - View original images/PDFs through the Android file viewer or iOS system preview/open sheet. Missing or disconnected originals show "Original receipt unavailable"; structured history remains available and editable.
-- AES-GCM encrypted local structured purchase history with search, dashboard and simple question answering.
+- AES-GCM encrypted local structured purchase history with search, dashboard and constrained English/German purchase queries.
 - Storage-provider selector for **This device / Google Drive / iCloud Drive**.
 - Privacy filter and data model intentionally exclude card numbers, IBAN/BIC, bank accounts, terminal IDs, authorization codes and payment references.
 - A deployable Cloudflare Worker proxies privacy-aware Gemini receipt extraction without exposing the Gemini key to the mobile app.
@@ -52,6 +52,27 @@ npm run typecheck
 node --test tests/*.test.cjs
 npx expo-doctor
 ```
+
+## Ask purchase history
+
+Ask uses reusable typed parsing and execution services (`src/services/purchaseQuery*.ts`), entirely on-device. It supports `sum`, `list`, `find_receipt`, `price_history`, `cheapest` and `last_purchase`, with intersecting product, merchant, category, inclusive date-range and calendar-month filters. No purchase history is sent to AI; no generated SQL is executed. Answers show the interpreted filters and supporting merchant/date/price rows. Tap a row to open receipt details, including when its original file is unavailable. Results refresh after receipt edits and show more evidence on demand.
+
+Examples:
+
+- `How much did I spend on food in August 2026?`
+- `Wie viel habe ich für Lebensmittel im August 2026 ausgegeben?`
+- `Show purchases from REWE between 2026-08-01 and 2026-08-31`
+- `Zeige Einkäufe bei REWE vom 01.08.2026 bis 31.08.2026`
+- `Find receipt for milk` / `Finde den Beleg für Milch`
+- `Price history for milk` / `Preisverlauf für Milch`
+- `Cheapest milk` / `Günstigster Kauf von Milch`
+- `When did I last buy milk?` / `Wann habe ich zuletzt Milch gekauft?`
+
+Product matching checks words in corrected names and original item text, ignoring case and normalizing German umlauts. It does not infer translations or equivalent package sizes. Put a product in double quotes if its name contains category or query words. Merchants use `at/from` or `bei/von`; categories accept English and German names. Dates accept `YYYY-MM-DD` or `DD.MM.YYYY`; named months without a year use the current local year, shown in the answer. `This month` / `diesen Monat` and `last month` / `letzten Monat` are supported. Ambiguous dates, negation, multiple categories and unsupported time expressions prompt guidance instead of silently widening the search.
+
+Arithmetic uses integer cents. Unfiltered or merchant/date-only sums use confirmed receipt totals once per receipt. Product/category sums use matching item line totals without multiplying quantities again. Cheapest compares line totals and includes all ties; price history is oldest first and displays quantities. Neither claims unit-price equivalence. Last purchase returns every match on the latest purchase date because exact purchase times are not recorded. Receipt searches deduplicate supporting receipts and display full receipt totals.
+
+Questions containing payment/banking information are rejected and redacted before being added to chat messages. Query evidence uses an allowlist of purchase fields and applies the central privacy filter; chat is not persisted and existing encrypted receipt persistence is unchanged.
 
 ## Real AI extraction
 
