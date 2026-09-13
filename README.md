@@ -12,6 +12,8 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 - Edited purchase fields are validated and privacy-sanitized again before encrypted persistence.
 - Non-itemized receipts and card-payment slips use the printed merchant as one purchase item and the full amount, including cents, as its price. These entries use category Other and reduced confidence for review; payment credentials remain excluded.
 - Local receipt-original storage in the app's Documents directory.
+- Tap a purchase to see its receipt, extracted item text, categories and original storage provider. Edit saved purchase details without changing the original reference or re-running extraction.
+- View original images/PDFs through the Android file viewer or iOS system preview/open sheet. Missing or disconnected originals show "Original receipt unavailable"; structured history remains available and editable.
 - AES-GCM encrypted local structured purchase history with search, dashboard and simple question answering.
 - Storage-provider selector for **This device / Google Drive / iCloud Drive**.
 - Privacy filter and data model intentionally exclude card numbers, IBAN/BIC, bank accounts, terminal IDs, authorization codes and payment references.
@@ -91,6 +93,10 @@ The backend uses a strict output schema, explicitly prohibits payment credential
 ### Local — implemented
 
 Receipt originals are copied to the app's document storage under `ReceiptMind/Receipts`.
+
+The storage-provider interface includes `isAvailable(reference?)` and `openReceipt(reference)`. Screens use service-level helpers with the receipt's saved provider, independent of the currently selected provider. Local references are resolved within the current app Documents directory (including older iOS container paths). Android grants temporary read access through a content URI; iOS uses `expo-sharing`. Rebuild custom native clients after installing `expo-intent-launcher` and `expo-sharing`. Opening requires a compatible native viewer; web opening is not supported.
+
+Receipt updates pass through the existing review validation/payment filter and encrypted store. Original availability is never used to prune structured history, and a failed encrypted write leaves the previous record intact.
 
 ### Google Drive — adapter placeholder
 

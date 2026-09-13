@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 import { getEncryptedJson, removeEncryptedJson, setEncryptedJson } from '../services/encryptedStore';
-import { createReviewDraft, validateReview } from '../services/receiptReview';
+import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
+import { updateStructuredReceipt } from '../services/receiptUpdate';
 import { sanitizeItemText } from '../services/privacy';
 import { Receipt, StorageProviderId } from '../types';
 
@@ -13,6 +14,7 @@ type ReceiptStoreValue = {
   storageProvider: StorageProviderId;
   hydrated: boolean;
   addReceipt: (receipt: Receipt) => Promise<void>;
+  updateReceipt: (id: string, draft: ReviewDraft) => Promise<void>;
   setStorageProvider: (provider: StorageProviderId) => Promise<void>;
   clearAll: () => Promise<void>;
 };
@@ -52,6 +54,12 @@ export function ReceiptStoreProvider({ children }: PropsWithChildren) {
     setReceipts(next);
   }
 
+  async function updateReceipt(id: string, draft: ReviewDraft) {
+    const next = updateStructuredReceipt(receipts, id, draft);
+    await setEncryptedJson(RECEIPTS_KEY, next);
+    setReceipts(next);
+  }
+
   async function setStorageProvider(provider: StorageProviderId) {
     setStorageProviderState(provider);
     await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify({ storageProvider: provider }));
@@ -63,7 +71,7 @@ export function ReceiptStoreProvider({ children }: PropsWithChildren) {
   }
 
   const value = useMemo(
-    () => ({ receipts, storageProvider, hydrated, addReceipt, setStorageProvider, clearAll }),
+    () => ({ receipts, storageProvider, hydrated, addReceipt, updateReceipt, setStorageProvider, clearAll }),
     [receipts, storageProvider, hydrated],
   );
 

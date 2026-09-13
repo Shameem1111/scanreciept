@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, SafeAreaView } from 'react-native';
+import { ReceiptDetailScreen } from './ReceiptDetailScreen';
 import { Card } from '../components/Ui';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
@@ -7,6 +8,7 @@ import { colors } from '../theme';
 export function PurchasesScreen() {
   const { receipts } = useReceiptStore();
   const [query, setQuery] = useState('');
+  const [receiptId, setReceiptId] = useState<string | null>(null);
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
     return receipts.flatMap((receipt) => receipt.items.map((item) => ({ ...item, merchant: receipt.merchant, date: receipt.purchaseDate, receiptId: receipt.id })))
@@ -14,20 +16,25 @@ export function PurchasesScreen() {
   }, [receipts, query]);
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <><Modal visible={receiptId !== null} animationType="slide" onRequestClose={() => setReceiptId(null)}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        {receiptId && <ReceiptDetailScreen key={receiptId} receiptId={receiptId} onBack={() => setReceiptId(null)} />}
+      </SafeAreaView>
+    </Modal><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Purchases</Text>
       <TextInput value={query} onChangeText={setQuery} placeholder="Search medicine, bananas, REWE…" placeholderTextColor="#8A968D" style={styles.search} />
       {items.length === 0 ? <Card><Text style={styles.empty}>No matching purchases yet.</Text></Card> : items.map((item, index) => (
-        <View key={`${item.receiptId}-${item.id}-${index}`} style={styles.row}>
+        <Pressable key={`${item.receiptId}-${item.id}-${index}`} style={styles.row} onPress={() => setReceiptId(item.receiptId)}
+          accessibilityRole="button" accessibilityLabel={`View receipt for ${item.name}, ${item.merchant}, ${item.date}`}>
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>{item.name}</Text>
             <Text style={styles.meta}>{item.category} · {item.merchant} · {item.date}</Text>
           </View>
           <Text style={styles.price}>€{item.price.toFixed(2)}</Text>
-        </View>
+        </Pressable>
       ))}
       <View style={{ height: 40 }} />
-    </ScrollView>
+    </ScrollView></>
   );
 }
 
