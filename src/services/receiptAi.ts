@@ -1,6 +1,7 @@
 import { File } from 'expo-file-system';
 import { fetch } from 'expo/fetch';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
+import { validPurchaseDate } from './receiptReview';
 import { sanitizeItemText, sanitizeMerchant } from './privacy';
 
 const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other']);
@@ -15,7 +16,7 @@ const extractionErrors: Record<string, string> = {
   PROVIDER_UNAVAILABLE: 'The receipt AI service is temporarily unavailable. Please try again shortly.',
   PROVIDER_TIMEOUT: 'Receipt reading timed out. Please try again.',
   INVALID_AI_RESPONSE: 'The AI service returned an unreadable result. Please retry the receipt.',
-  UNREADABLE_RECEIPT: 'Could not reliably read the items or date. Try a clearer image of the complete German or English receipt.',
+  UNREADABLE_RECEIPT: 'Could not reliably read the items. Try a clearer image of the complete German or English receipt.',
   INVALID_UPLOAD: 'Receipt upload was invalid. Select the file again and retry.',
 };
 
@@ -36,15 +37,15 @@ function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
       category: categories.has(item.category) ? item.category : 'Other',
       originalText: sanitizeItemText(item.originalText || item.name || ''),
       name: sanitizeItemText(item.name || item.originalText || 'Unknown item'),
-      quantity: Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 1,
+      quantity: Number.isFinite(item.quantity) ? item.quantity : 0,
       price: Number.isFinite(item.price) ? Math.max(0, item.price) : 0,
-      confidence: Number.isFinite(item.confidence) ? Math.min(1, Math.max(0, item.confidence)) : 0,
+      confidence: Number.isFinite(item.confidence) && item.quantity > 0 && categories.has(item.category) ? Math.min(1, Math.max(0, item.confidence)) : 0,
     }))
     .filter((item) => item.name !== '[PAYMENT INFORMATION REMOVED]' && item.originalText !== '[PAYMENT INFORMATION REMOVED]');
 
   return {
     merchant: sanitizeMerchant(input.merchant || 'Unknown merchant'),
-    purchaseDate: input.purchaseDate,
+    purchaseDate: validPurchaseDate(input.purchaseDate),
     total: input.total,
     source: 'ai',
     currency: 'EUR',
@@ -87,7 +88,6 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
 
     const result = (await response.json()) as ExtractedReceipt;
     if (!result || result.source === 'demo' || typeof result.merchant !== 'string' ||
-        typeof result.purchaseDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(result.purchaseDate) ||
         !Number.isFinite(result.total) || result.total < 0 || result.currency !== 'EUR' ||
         !Array.isArray(result.items) || result.items.some((item) => !item ||
           typeof item.name !== 'string' || typeof item.originalText !== 'string' ||

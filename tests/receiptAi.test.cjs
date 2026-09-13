@@ -154,3 +154,10 @@ test('rejects demo, malformed, and empty extraction responses', async () => {
     await assert.rejects(service.extractReceipt(asset), /invalid result|No purchase items/);
   }
 });
+
+test('client allows missing or ambiguous dates into review without retaining arbitrary text', async () => {
+  for (const purchaseDate of [undefined, null, '', '2026-02-30', 'IBAN DE89370400440532013000']) {
+    const service = loadService(undefined, async () => response({ ...result, purchaseDate }));
+    assert.equal((await service.extractReceipt(asset)).purchaseDate, '');
+  }
+});

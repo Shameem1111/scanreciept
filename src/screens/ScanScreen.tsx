@@ -2,18 +2,20 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Card, PrimaryButton, SecondaryButton, SectionTitle } from '../components/Ui';
+import { Card, PrimaryButton, SecondaryButton } from '../components/Ui';
+import { ReceiptReview } from '../components/ReceiptReview';
+import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
 import { demoReceipt } from '../data';
 import { extractReceipt } from '../services/receiptAi';
 import { saveReceiptAsset, storageProviders } from '../services/storage';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
-import { ExtractedReceipt, Receipt, ReceiptAsset } from '../types';
+import { Receipt, ReceiptAsset } from '../types';
 
 export function ScanScreen() {
   const { addReceipt, storageProvider } = useReceiptStore();
   const [asset, setAsset] = useState<ReceiptAsset | null>(null);
-  const [extracted, setExtracted] = useState<ExtractedReceipt | null>(null);
+  const [extracted, setExtracted] = useState<ReviewDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [extractionError, setExtractionError] = useState<string | null>(null);
 
@@ -48,7 +50,7 @@ export function ScanScreen() {
     setExtracted(null);
     setExtractionError(null);
     try {
-      setExtracted(await extractReceipt(nextAsset));
+      setExtracted(createReviewDraft(await extractReceipt(nextAsset)));
     } catch (error) {
       setExtractionError(error instanceof Error ? error.message : 'Could not read receipt. Please try again.');
     } finally {
@@ -59,11 +61,13 @@ export function ScanScreen() {
   async function useDemo() {
     setExtractionError(null);
     setAsset({ uri: '', name: 'demo-receipt.jpg', mimeType: 'image/jpeg' });
-    setExtracted(demoReceipt);
+    setExtracted(createReviewDraft(demoReceipt));
   }
 
   async function save() {
-    if (!asset || !extracted) return;
+    if (busy || !asset || !extracted) return;
+    const checked = validateReview(extracted);
+    if (!checked.receipt) return Alert.alert('Check receipt', 'Correct the marked fields before saving.');
     if (!storageProviders[storageProvider].isConfigured()) {
       return Alert.alert(
         'Storage provider not configured',
@@ -79,7 +83,7 @@ export function ScanScreen() {
         : { provider: storageProvider, reference: 'demo://receipt' };
 
       const receipt: Receipt = {
-        ...extracted,
+        ...checked.receipt,
         id: receiptId,
         storageProvider: saved.provider,
         storageReference: saved.reference,
@@ -98,7 +102,7 @@ export function ScanScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
       <Text style={styles.title}>Add receipt</Text>
       <Text style={styles.subtitle}>Use the camera for a new receipt or upload an existing image/PDF.</Text>
 
@@ -121,24 +125,7 @@ export function ScanScreen() {
       {asset && !asset.uri ? <Card><Text style={styles.small}>Demo receipt selected.</Text></Card> : null}
       {asset?.mimeType === 'application/pdf' ? <Card><Text style={styles.small}>PDF selected: {asset.name}</Text></Card> : null}
 
-      {extracted && (
-        <View style={{ marginTop: 22 }}>
-          <SectionTitle>Review</SectionTitle>
-          <Card>
-            <View style={styles.summaryRow}><Text style={styles.merchant}>{extracted.merchant}</Text><Text style={styles.amount}>€{extracted.total.toFixed(2)}</Text></View>
-            <Text style={styles.small}>{extracted.purchaseDate} · {extracted.source === 'demo' ? 'Demo extraction' : 'AI extraction'}</Text>
-            <View style={styles.divider} />
-            {extracted.items.map((item) => (
-              <View key={item.id} style={styles.itemRow}>
-                <View style={{ flex: 1 }}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.small}>{item.category} · {Math.round(item.confidence * 100)}% confidence</Text></View>
-                <Text style={styles.itemPrice}>€{item.price.toFixed(2)}</Text>
-              </View>
-            ))}
-            <Text style={styles.privacy}>🔒 Card numbers, IBANs, payment references and banking credentials are excluded from stored purchase data.</Text>
-          </Card>
-          <View style={{ marginTop: 14 }}><PrimaryButton label="Save receipt" onPress={save} disabled={busy} /></View>
-        </View>
-      )}
+      {extracted && <ReceiptReview draft={extracted} onChange={setExtracted} onSave={save} busy={busy} />}
       <View style={{ height: 40 }} />
     </ScrollView>
   );

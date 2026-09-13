@@ -28,6 +28,7 @@ export type Receipt = {
   merchant: string;
   purchaseDate: string;
   total: number;
+  printedTotal?: number;
   currency: 'EUR';
   items: ReceiptItem[];
   storageProvider: StorageProviderId;

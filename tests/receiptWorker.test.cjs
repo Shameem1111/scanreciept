@@ -63,7 +63,7 @@ test('merchant fallback rejects missing evidence and does not revive filtered pa
   for (const overrides of [
     { merchant: '' }, { merchant: 'Unknown merchant' }, { merchant: 'VISA **1234' },
     { total: undefined }, { total: 0 }, { total: -1 }, { total: '373,16' },
-    { purchaseDate: '' }, { purchaseDate: '2026-02-30' }, { items: undefined },
+    { items: undefined },
     { items: [{ originalText: 'VISA **1234', name: 'VISA **1234' }] },
   ]) {
     const worker = loadWorker(async () => success({ ...slip, ...overrides }));
@@ -130,7 +130,7 @@ test('persistent provider failures stop after two attempts', async () => {
 
 test('malformed AI output and unreadable receipts have distinct errors', async () => {
   for (const [payload, code] of [[{}, 'INVALID_AI_RESPONSE'],
-    [{ candidates: [{ content: { parts: [{ text: JSON.stringify({ ...extraction('Apples'), purchaseDate: '' }) }] } }] }, 'UNREADABLE_RECEIPT']]) {
+    [{ candidates: [{ content: { parts: [{ text: JSON.stringify({ ...extraction('Apples'), items: undefined }) }] } }] }, 'UNREADABLE_RECEIPT']]) {
     const worker = loadWorker(async () => Response.json(payload));
     const response = await worker.fetch(request(), env);
     assert.equal((await response.json()).code, code);
@@ -142,4 +142,28 @@ test('invalid multipart input does not call the AI provider', async () => {
   const response = await worker.fetch(new Request('https://receipt.example/receipt/extract', { method: 'POST', body: 'invalid' }), env);
   assert.equal(response.status, 400);
   assert.equal((await response.json()).code, 'INVALID_UPLOAD');
+});
+
+test('missing and uncertain dates reach review with no fabricated date', async () => {
+  for (const purchaseDate of [undefined, null, '', '2026-02-30', '03/04/26']) {
+    const worker = loadWorker(async () => success({ ...extraction('Apples'), purchaseDate }));
+    const response = await worker.fetch(request(), env);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).purchaseDate, '');
+  }
+});
+
+test('backend excludes payment identifiers and unknown fields', async () => {
+  for (const text of ['Bank account 123456', 'Payment reference ABC999', 'xxxx 1234', 'IBAN FR1420041010050500013M02606', 'Terminal ID ABC', 'Authorization ABC', 'CVV 123']) {
+    const value = extraction('Milk');
+    value.items.push({ ...value.items[0], originalText: text, name: text });
+    value.bank = text;
+    const worker = loadWorker(async () => success(value));
+    const response = await worker.fetch(request(), env);
+    assert.equal(response.status, 200);
+    const saved = await response.json();
+    assert.equal(saved.items.length, 1);
+    assert.equal(JSON.stringify(saved).includes(text), false);
+    assert.equal('bank' in saved, false);
+  }
 });

@@ -1,20 +1,22 @@
 const sensitivePaymentPatterns: RegExp[] = [
-  /\b(?:IBAN|BIC|SWIFT)\b/i,
+  /\b(?:IBAN|BIC|SWIFT|CVV|CVC|BANK|BANKING|KONTO|KONTONUMMER|ACCOUNT|EXPIRY|EXPIRATION|G\u00dcLTIG)\b/i,
   /\b(?:EC[- ]?KARTE|GIROCARD|MAESTRO|MASTERCARD|VISA|AMEX)\b/i,
-  /\b(?:AUTH|AUTORISIERUNG|AUTHORIZATION|TERMINAL(?:\s*ID)?|TID|MID)\b/i,
-  /\b(?:KARTENNR|CARD\s*NO|CARD\s*NUMBER|PAN)\b/i,
+  /\b(?:AUTH|AUTORISIERUNG|AUTORISATION|AUTHORIZATION|AUTHORISATION|PAYMENT[ -]?REFERENCE|ZAHLUNGSREFERENZ|REFERENZ|TRACE|TRANSACTION[ -]?ID|TERMINAL(?:\s*ID)?|TID|MID)\b/i,
+  /\b(?:KARTENNR|KARTENNUMMER|CARD|PAN)\b/i,
   /\bDE\d{2}(?:\s?\d{4}){4}\s?\d{2}\b/i,
   /(?:\d[ -]*?){13,19}/,
-  /\*{2,}\s*\d{2,6}/,
+  /[*xX\u2022]{2,}[ -]*\d{2,6}/,
+  /\b[A-Z]{2}\d{2}(?:[ -]?[A-Z0-9]){11,30}\b/i,
 ];
 
 export function isSensitivePaymentText(value: string): boolean {
-  return sensitivePaymentPatterns.some((pattern) => pattern.test(value));
+  const normalized = value.normalize('NFKC').replace(/[\u0000-\u001F\u007F\u200B-\u200D\uFEFF]/g, '');
+  return sensitivePaymentPatterns.some((pattern) => pattern.test(value) || pattern.test(normalized));
 }
 
 export function redactSensitivePaymentText(value: string): string {
   if (isSensitivePaymentText(value)) return '[PAYMENT INFORMATION REMOVED]';
-  return value;
+  return value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 export function sanitizeMerchant(value: string): string {

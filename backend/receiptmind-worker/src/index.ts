@@ -47,13 +47,14 @@ const ALLOWED_CATEGORIES = new Set([
 ]);
 
 const sensitivePaymentPatterns: RegExp[] = [
-  /\b(?:IBAN|BIC|SWIFT|CVV|CVC)\b/i,
+  /\b(?:IBAN|BIC|SWIFT|CVV|CVC|BANK|BANKING|KONTO|KONTONUMMER|ACCOUNT|EXPIRY|EXPIRATION|G\u00dcLTIG)\b/i,
   /\b(?:EC[- ]?KARTE|GIROCARD|MAESTRO|MASTERCARD|VISA|AMEX)\b/i,
-  /\b(?:AUTH|AUTORISIERUNG|AUTHORIZATION|TERMINAL(?:\s*ID)?|TID|MID)\b/i,
-  /\b(?:KARTENNR|CARD\s*NO|CARD\s*NUMBER|ACCOUNT\s*NO|PAN)\b/i,
+  /\b(?:AUTH|AUTORISIERUNG|AUTORISATION|AUTHORIZATION|AUTHORISATION|PAYMENT[ -]?REFERENCE|ZAHLUNGSREFERENZ|REFERENZ|TRACE|TRANSACTION[ -]?ID|TERMINAL(?:\s*ID)?|TID|MID)\b/i,
+  /\b(?:KARTENNR|KARTENNUMMER|CARD|PAN)\b/i,
   /\bDE\d{2}(?:\s?\d{4}){4}\s?\d{2}\b/i,
   /(?:\d[ -]*?){13,19}/,
-  /\*{2,}\s*\d{2,6}/,
+  /[*xX\u2022]{2,}[ -]*\d{2,6}/,
+  /\b[A-Z]{2}\d{2}(?:[ -]?[A-Z0-9]){11,30}\b/i,
 ];
 
 const receiptSchema = {
@@ -100,11 +101,12 @@ function json(body: unknown, status = 200): Response {
 }
 
 function isSensitivePaymentText(value: string): boolean {
-  return sensitivePaymentPatterns.some((pattern) => pattern.test(value));
+  const normalized = value.normalize('NFKC').replace(/[\u0000-\u001F\u007F\u200B-\u200D\uFEFF]/g, '');
+  return sensitivePaymentPatterns.some((pattern) => pattern.test(value) || pattern.test(normalized));
 }
 
 function cleanText(value: unknown, maxLength: number): string | null {
-  if (typeof value !== 'string') return null;
+  if (typeof value !== 'string' || isSensitivePaymentText(value)) return null;
   const clean = value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!clean || isSensitivePaymentText(clean)) return null;
   return clean.slice(0, maxLength);
@@ -141,7 +143,8 @@ function sanitizeExtraction(input: unknown): Record<string, unknown> {
         : 'Other',
       quantity: finiteNonNegative(item.quantity, 1),
       price: finiteNonNegative(item.price),
-      confidence: Math.min(1, finiteNonNegative(item.confidence)),
+      confidence: typeof item.quantity === 'number' && item.quantity > 0 && typeof item.price === 'number' && item.price >= 0 && typeof item.category === 'string' && ALLOWED_CATEGORIES.has(item.category)
+        ? Math.min(1, finiteNonNegative(item.confidence)) : 0,
     }];
   });
 
@@ -225,6 +228,7 @@ async function extractReceipt(file: File, mimeType: string, env: Env): Promise<R
     'When no purchased line items are printed, return items as an empty array; the app will use the merchant name and total as one purchase for review.',
     'Do not return an empty item list for an itemized receipt whose product lines are merely unreadable; do not invent products or infer them from the merchant.',
     'Read every digit of the amount, including cents, without rounding or swapping digits; for example 373,16 becomes 373.16.',
+    'Item price is the full line total for the given quantity, not the unit price.',
     'Use low confidence when uncertain. Do not fabricate unreadable values.',
     'Return dates as YYYY-MM-DD. Return an empty date when it cannot be read reliably.',
     'ReceiptMind currently supports EUR; return EUR as currency.',
@@ -275,8 +279,8 @@ async function extractReceipt(file: File, mimeType: string, env: Env): Promise<R
       if (controller.signal.aborted) throw new ExtractionError('PROVIDER_TIMEOUT', 'Receipt reading took too long. Please try again.', 504);
       throw new ExtractionError('INVALID_AI_RESPONSE', 'The AI service could not return a readable receipt result. Please try again.', 502);
     }
-    if (!(extracted.items as unknown[]).length || !extracted.purchaseDate) {
-      throw new ExtractionError('UNREADABLE_RECEIPT', 'Could not reliably read the items or purchase date. Use a clearer image of the complete German or English receipt.', 422);
+    if (!(extracted.items as unknown[]).length) {
+      throw new ExtractionError('UNREADABLE_RECEIPT', 'Could not reliably read the purchase items. Use a clearer image of the complete German or English receipt.', 422);
     }
     return extracted;
   } catch (error) {

@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 import { getEncryptedJson, removeEncryptedJson, setEncryptedJson } from '../services/encryptedStore';
+import { createReviewDraft, validateReview } from '../services/receiptReview';
+import { sanitizeItemText } from '../services/privacy';
 import { Receipt, StorageProviderId } from '../types';
 
 const RECEIPTS_KEY = '@receiptmind/receipts/encrypted-v1';
@@ -41,9 +43,13 @@ export function ReceiptStoreProvider({ children }: PropsWithChildren) {
   }, []);
 
   async function addReceipt(receipt: Receipt) {
-    const next = [receipt, ...receipts];
-    setReceipts(next);
+    const checked = validateReview(createReviewDraft(receipt));
+    if (!checked.receipt) throw new Error('Correct the receipt fields before saving.');
+    const clean: Receipt = { ...checked.receipt, id: receipt.id, storageProvider: receipt.storageProvider,
+      storageReference: receipt.storageReference, originalFilename: sanitizeItemText(receipt.originalFilename), createdAt: receipt.createdAt };
+    const next = [clean, ...receipts];
     await setEncryptedJson(RECEIPTS_KEY, next);
+    setReceipts(next);
   }
 
   async function setStorageProvider(provider: StorageProviderId) {
