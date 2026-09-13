@@ -53,6 +53,12 @@ node --test tests/*.test.cjs
 npx expo-doctor
 ```
 
+## Browse purchase memory
+
+The **Purchases** tab searches normalized names and printed `originalText` while showing both separately. Use the bottom **Filters & sort** button for merchant, item category, inclusive date bounds, newest/oldest/lowest/highest line-price sorting, and receipt or product grouping. Blank date bounds are open-ended; invalid or reversed ranges show an error. Groups follow their first row in the selected sort, and rows retain that sort within each group. Every purchase row opens receipt details, even if the original file is unavailable.
+
+**Price history & cheapest previous** opens all saved purchases of the selected normalized product, independent of browse filters, oldest first. Product identity ignores case and repeated whitespace but does not infer aliases, translations or package equivalence. Cheapest previous compares integer-cent line totals strictly before the selected purchase date, excludes same-day purchases whose order is unknown, and shows all ties with receipt links. Quantities remain visible; these are not unit-price comparisons. All filtering and calculations run locally without AI or persistence changes.
+
 ## Ask purchase history
 
 Ask uses reusable typed parsing and execution services (`src/services/purchaseQuery*.ts`), entirely on-device. It supports `sum`, `list`, `find_receipt`, `price_history`, `cheapest` and `last_purchase`, with intersecting product, merchant, category, inclusive date-range and calendar-month filters. No purchase history is sent to AI; no generated SQL is executed. Answers show the interpreted filters and supporting merchant/date/price rows. Tap a row to open receipt details, including when its original file is unavailable. Results refresh after receipt edits and show more evidence on demand.

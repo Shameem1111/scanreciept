@@ -11,7 +11,7 @@ function matches(value: string, filter?: string): boolean {
   const words = tokens(value);
   return tokens(filter).every(word => words.includes(word));
 }
-function cents(value: number): number | null {
+export function cents(value: number): number | null {
   if (!Number.isFinite(value) || value < 0 || value > 1_000_000) return null;
   return Math.round(value * 100);
 }
