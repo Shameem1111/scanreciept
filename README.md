@@ -7,6 +7,7 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 - Native **Scan Receipt** flow using the device camera.
 - Native **Upload Receipt** flow for image/PDF files.
 - Review extracted merchant, date, line items, categories and prices.
+- Non-itemized receipts and card-payment slips use the printed merchant as one purchase item and the full amount, including cents, as its price. These entries use category Other and reduced confidence for review; payment credentials remain excluded.
 - Local receipt-original storage in the app's Documents directory.
 - AES-GCM encrypted local structured purchase history with search, dashboard and simple question answering.
 - Storage-provider selector for **This device / Google Drive / iCloud Drive**.

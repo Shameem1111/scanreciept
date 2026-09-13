@@ -60,6 +60,20 @@ const result = {
 };
 const response = (value) => ({ ok: true, json: async () => value });
 
+test('merchant-only purchase survives client validation with exact cents', async () => {
+  const service = loadService(undefined, async () => response({
+    ...result, merchant: 'Apotheke Taufkirchen', purchaseDate: '2026-09-03', total: 373.16,
+    items: [{ id: 'item-1', name: 'Apotheke Taufkirchen', originalText: 'Apotheke Taufkirchen',
+      category: 'Other', quantity: 1, price: 373.16, confidence: 0.5 }],
+  }));
+  const actual = await service.extractReceipt(asset);
+  assert.equal(actual.items.length, 1);
+  assert.equal(actual.items[0].name, 'Apotheke Taufkirchen');
+  assert.equal(actual.items[0].price, 373.16);
+  assert.equal(actual.total, 373.16);
+  assert.equal(actual.items[0].confidence, 0.5);
+});
+
 test('blank endpoint uses the configured default service', async () => {
   const service = loadService(' ', async (url) => {
     assert.equal(url, 'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract');
