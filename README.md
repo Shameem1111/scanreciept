@@ -18,8 +18,8 @@ The checked-in mobile configuration defaults to the deployed ReceiptMind Cloudfl
 
 ## Stack
 
-- Expo SDK 57 / React Native 0.86
-- TypeScript
+- Expo SDK 57 / React Native 0.86.3
+- TypeScript 6.0 (Expo-aligned)
 - `expo-image-picker` for camera scanning
 - `expo-document-picker` for uploads
 - `expo-file-system` for local receipt originals
@@ -36,6 +36,17 @@ npx expo start
 ```
 
 Then scan the QR code with Expo Go on Android/iOS, or press `a` / `i` when an emulator/simulator is available.
+
+Keep dependencies aligned with the installed Expo SDK using `npx expo install --fix`, then run `npx expo-doctor`. React Native 0.86.3 includes Hermes `250829098.0.17`, replacing the affected `250829098.0.14` runtime. SDK 57 uses the New Architecture without the removed `newArchEnabled` configuration field. Rebuild existing native app binaries after updating these dependencies.
+
+Validate project health with:
+
+```bash
+npm install
+npm run typecheck
+node --test tests/*.test.cjs
+npx expo-doctor
+```
 
 ## Real AI extraction
 

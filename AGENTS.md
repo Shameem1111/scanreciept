@@ -34,8 +34,8 @@ Do not redesign unrelated areas when implementing a focused task.
 ## 3. Current stack
 
 - Expo SDK 57
-- React Native 0.86
-- TypeScript
+- React Native 0.86.3
+- TypeScript 6.0 (Expo-aligned)
 - `expo-image-picker` — camera/gallery receipt input
 - `expo-document-picker` — file/PDF receipt input
 - `expo-file-system` — local original receipt storage
