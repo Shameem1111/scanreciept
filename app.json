@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "ReceiptMind",
+    "slug": "scanreciept",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "receiptmind",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shameem.receiptmind",
+      "usesIcloudStorage": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "ReceiptMind uses the camera only when you choose to scan a receipt.",
+        "NSPhotoLibraryUsageDescription": "ReceiptMind accesses your photo library only when you choose to upload a receipt."
+      }
+    },
+    "android": {
+      "package": "com.shameem.receiptmind",
+      "permissions": [
+        "CAMERA"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ReceiptMind accesses your photos only when you choose a receipt image.",
+          "cameraPermission": "ReceiptMind uses the camera only when you choose to scan a receipt.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-document-picker",
+        {
+          "iCloudContainerEnvironment": "Production"
+        }
+      ],
+      [
+        "expo-file-system",
+        {
+          "supportsOpeningDocumentsInPlace": true,
+          "enableFileSharing": true
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "ReceiptMind uses secure device storage to protect your local encryption key."
+        }
+      ]
+    ],
+    "extra": {
+      "receiptAiEndpoint": ""
+    }
+  }
+}
