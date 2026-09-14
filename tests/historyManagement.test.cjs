@@ -30,6 +30,7 @@ function harness(initial = [original()]) {
     '@react-native-async-storage/async-storage': { default: {
       getItem: async k => kv.get(k) ?? null, setItem: async (k,v) => { if(state.failJournal && k.includes("original-pending")) throw Error("storage full"); kv.set(k,v); }, removeItem: async k => { kv.delete(k); },
     } },
+    './deviceSecurity': { clearLockSettings: async () => calls.push('clear lock settings') },
     'expo-crypto': { randomUUID: () => String(++id) },
     './historyExport': { clearExportFiles: async () => calls.push('clear exports'), shareHistoryJson: async json => calls.push(JSON.parse(json)) },
     './encryptedStore': {

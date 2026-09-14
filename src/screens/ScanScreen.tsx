@@ -1,7 +1,5 @@
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SecondaryButton } from '../components/Ui';
 import { ReceiptReview } from '../components/ReceiptReview';
 import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
@@ -13,6 +11,7 @@ import { storageErrorMessage } from '../services/storageErrors';
 import { hasDuplicate } from '../services/historyData';
 import { colors } from '../theme';
 import { ReceiptAsset } from '../types';
+import { pickReceipt, ReceiptInputError, type ReceiptInput } from '../services/receiptInput';
 
 export function ScanScreen() {
   const { saveReceipt, receipts, storageProvider } = useReceiptStore();
@@ -21,30 +20,29 @@ export function ScanScreen() {
   const [busy, setBusy] = useState(false);
   const [extractionError, setExtractionError] = useState<string | null>(null);
 
-  async function scanCamera() {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) return Alert.alert('Camera permission required', 'Enable camera permission to scan a receipt.');
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
-    if (!result.canceled) {
-      const image = result.assets[0];
-      if (!image) return;
-      const next = { uri: image.uri, name: image.fileName ?? `receipt-${Date.now()}.jpg`, mimeType: image.mimeType ?? 'image/jpeg' };
+  async function selectReceipt(source: ReceiptInput) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const next = await pickReceipt(source);
+      if (!next) return;
       setAsset(next);
       setExtracted(null);
       await runExtraction(next);
-    }
+    } catch (error) {
+      Alert.alert('Receipt input unavailable', error instanceof ReceiptInputError ? error.message : 'Please try selecting the receipt again.',
+        error instanceof ReceiptInputError && error.openSettings ? [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => { void Linking.openSettings().catch(() => Alert.alert('Open device Settings', 'Allow camera access for ReceiptMind in your device settings.')); } },
+        ] : undefined);
+    } finally { setBusy(false); }
   }
-
-  async function uploadReceipt() {
-    const result = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf'], copyToCacheDirectory: true });
-    if (!result.canceled) {
-      const file = result.assets[0];
-      if (!file) return;
-      const next = { uri: file.uri, name: file.name, mimeType: file.mimeType ?? 'application/octet-stream' };
-      setAsset(next);
-      setExtracted(null);
-      await runExtraction(next);
-    }
+  function uploadReceipt() {
+    Alert.alert('Upload Receipt', 'Choose a photo or an existing image/PDF file.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Photo gallery', onPress: () => { void selectReceipt('gallery'); } },
+      { text: 'Files / PDF', onPress: () => { void selectReceipt('file'); } },
+    ]);
   }
 
   async function runExtraction(nextAsset: ReceiptAsset) {
@@ -52,6 +50,12 @@ export function ScanScreen() {
     setExtracted(null);
     setExtractionError(null);
     try {
+      const approved = await new Promise<boolean>(resolve => Alert.alert('Read this receipt with AI?',
+        'This image or PDF will be sent to ReceiptMind?s Cloudflare service and Google Gemini to read purchase details. Google may retain it for abuse monitoring. Only save receipts you are comfortable sending. Your stored originals stay where you choose.', [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Read with AI', onPress: () => resolve(true) },
+        ], { cancelable: false }));
+      if (!approved) return;
       setExtracted(createReviewDraft(await extractReceipt(nextAsset)));
     } catch (error) {
       setExtractionError(error instanceof Error ? error.message : 'Could not read receipt. Please try again.');
@@ -61,6 +65,7 @@ export function ScanScreen() {
   }
 
   async function useDemo() {
+    if (!__DEV__) return;
     setExtractionError(null);
     setAsset({ uri: '', name: 'demo-receipt.jpg', mimeType: 'image/jpeg' });
     setExtracted(createReviewDraft(demoReceipt));
@@ -102,9 +107,9 @@ export function ScanScreen() {
       <Text style={styles.subtitle}>Use the camera for a new receipt or upload an existing image/PDF.</Text>
 
       <View style={styles.actions}>
-        <PrimaryButton label="📷  Scan Receipt" onPress={scanCamera} disabled={busy} />
+        <PrimaryButton label="📷  Scan Receipt" onPress={() => { void selectReceipt('camera'); }} disabled={busy} />
         <SecondaryButton label="⬆  Upload Receipt" onPress={uploadReceipt} disabled={busy} />
-        <SecondaryButton label="Use demo receipt" onPress={useDemo} disabled={busy} />
+        {__DEV__ && <SecondaryButton label="Use demo receipt (sample data)" onPress={useDemo} disabled={busy} />}
       </View>
 
       {busy && <ActivityIndicator color={colors.primary} size="large" style={{ marginVertical: 24 }} />}
@@ -120,6 +125,7 @@ export function ScanScreen() {
       {asset && !asset.uri ? <Card><Text style={styles.small}>Demo receipt selected.</Text></Card> : null}
       {asset?.mimeType === 'application/pdf' ? <Card><Text style={styles.small}>PDF selected: {asset.name}</Text></Card> : null}
 
+      {asset?.uri && !extracted && !busy && !extractionError && <SecondaryButton label="Read receipt with AI" onPress={() => { void runExtraction(asset); }} />}
       {extracted && <ReceiptReview draft={extracted} onChange={setExtracted} onSave={() => save()} busy={busy} />}
       <View style={{ height: 40 }} />
     </ScrollView>

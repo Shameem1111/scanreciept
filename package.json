@@ -7,25 +7,32 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.cjs",
+    "assets:generate": "node scripts/generate-assets.cjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.5",
     "expo": "^57.0.22",
     "expo-crypto": "~57.0.2",
+    "expo-dev-client": "~57.0.19",
     "expo-document-picker": "~57.0.1",
     "expo-file-system": "~57.0.6",
     "expo-image-picker": "~57.0.16",
     "expo-intent-launcher": "~57.0.1",
+    "expo-local-authentication": "~57.0.3",
+    "expo-screen-capture": "~57.0.3",
     "expo-secure-store": "~57.0.0",
     "expo-sharing": "~57.0.19",
+    "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.0",
     "react": "19.2.3",
     "react-native": "0.86.3"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",
+    "sharp": "^0.35.4",
     "typescript": "~6.0.3"
   }
 }

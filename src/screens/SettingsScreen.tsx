@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SectionTitle } from '../components/Ui';
 import { storageErrorMessage } from '../services/storageErrors';
 import { storageProviders } from '../services/storage';
@@ -7,6 +7,9 @@ import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
 import { StorageProviderId } from '../types';
 import { forgetGoogleConnection } from '../services/googleDriveAuth';
+import { useAppLock } from '../components/AppLock';
+import { LOCK_DELAYS } from '../services/appLock';
+import { legalLinks } from '../services/legalLinks';
 
 const options: { id: StorageProviderId; title: string; subtitle: string }[] = [
   { id: 'local', title: '📱 This device', subtitle: 'Working now. Originals stay in ReceiptMind local files.' },
@@ -15,6 +18,7 @@ const options: { id: StorageProviderId; title: string; subtitle: string }[] = [
 ];
 
 export function SettingsScreen() {
+  const { lock, state: lockState } = useAppLock();
   const { storageProvider, setStorageProvider, deleteHistory, deleteEverything, exportPurchaseHistory, receipts, recovery, hydrate, hydrated, storageWarning, retryStorageCleanup, connectStorage, disconnectStorage } = useReceiptStore();
   const [busy, setBusy] = useState(false);
   const [connections, setConnections] = useState<Partial<Record<StorageProviderId, string>>>({});
@@ -42,7 +46,7 @@ export function SettingsScreen() {
       everything ? 'Permanently removes structured history, all ReceiptMind local originals, temporary exports, settings, connected sessions and the encryption key. Google Drive/iCloud originals and copies you exported elsewhere require separate deletion.' :
         'Permanently removes all structured purchase records. All original files and the encryption key stay on this device. Google Drive/iCloud originals stay in your account.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => { void run(everything ? deleteEverything : deleteHistory); } },
+      { text: 'Delete', style: 'destructive', onPress: () => { void run(everything ? async () => { await deleteEverything(); await lock.load(); } : deleteHistory); } },
     ]);
   }
 
@@ -54,6 +58,34 @@ export function SettingsScreen() {
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>Privacy & storage</Text>
       <Text style={styles.subtitle}>Receipt originals stay where you choose. ReceiptMind never needs card or bank information.</Text>
+
+      <SectionTitle>App lock</SectionTitle>
+      <Card>
+        <Text style={styles.note}>Use Face ID, fingerprint or your device passcode to open ReceiptMind. Local history stays encrypted whether app lock is on or off. Locking clears unsaved review edits; finish saving before leaving the app.</Text>
+        <PrimaryButton label={lockState.enabled ? 'Turn off app lock' : 'Enable app lock'} disabled={busy || lockState.busy}
+          onPress={() => { void lock.configure({ enabled: !lockState.enabled, backgroundSeconds: lockState.backgroundSeconds }); }} />
+        {lockState.enabled && <>
+          <Text style={styles.note}>Lock after leaving the app:</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {LOCK_DELAYS.map(seconds => <Pressable key={seconds} accessibilityRole="radio" accessibilityState={{ checked: lockState.backgroundSeconds === seconds }}
+              disabled={lockState.busy || busy} style={[styles.option, lockState.backgroundSeconds === seconds && styles.optionSelected]}
+              onPress={() => { void lock.configure({ enabled: true, backgroundSeconds: seconds }); }}>
+              <Text>{seconds === 0 ? 'Immediately' : seconds < 60 ? `${seconds} seconds` : `${seconds / 60} minutes`}</Text>
+            </Pressable>)}
+          </View>
+          <PrimaryButton label="Lock now" disabled={lockState.busy || busy} onPress={() => lock.lockNow()} />
+        </>}
+        {lockState.error && <Text accessibilityRole="alert" style={styles.blocked}>{lockState.error}</Text>}
+      </Card>
+      <SectionTitle>Privacy information</SectionTitle>
+      <Card>
+        <Text style={styles.note}>Receipt images go to the extraction service and Google for AI reading. Google may retain prompts for abuse monitoring. Local deletion does not delete originals in your Drive/iCloud or provider-retained data.</Text>
+        {(['privacy', 'deletion'] as const).map(kind => <View key={kind}>
+          <PrimaryButton label={kind === 'privacy' ? 'Privacy policy' : 'Data deletion and account requests'} disabled={!legalLinks[kind] || busy}
+            onPress={() => { const url = legalLinks[kind]; if (url) void run(async () => { try { await Linking.openURL(url); } catch { throw new Error('The information page could not open. Check your connection and retry.'); } }); }} />
+          {!legalLinks[kind] && <Text style={styles.note}>{kind === 'privacy' ? 'Privacy policy' : 'Deletion request page'} is not configured in this preview. The owner must provide it before store release.</Text>}
+        </View>)}
+      </Card>
 
       {recovery && <Card>
         <Text accessibilityRole="alert" style={styles.blocked}>{recovery}</Text>

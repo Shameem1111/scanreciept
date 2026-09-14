@@ -20,13 +20,32 @@
             "NSUbiquitousContainerSupportedFolderLevels": "Any"
           }
         }
-      }
+      },
+      "buildNumber": "1"
     },
     "android": {
       "package": "com.shameem.receiptmind",
       "permissions": [
         "CAMERA"
-      ]
+      ],
+      "versionCode": 1,
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.DETECT_SCREEN_CAPTURE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-foreground.png",
+        "monochromeImage": "./assets/adaptive-monochrome.png",
+        "backgroundColor": "#164D35"
+      }
     },
     "plugins": [
       [
@@ -46,21 +65,46 @@
       [
         "expo-file-system",
         {
-          "supportsOpeningDocumentsInPlace": true,
-          "enableFileSharing": true
+          "supportsOpeningDocumentsInPlace": false,
+          "enableFileSharing": false
         }
       ],
       [
         "expo-secure-store",
         {
           "configureAndroidBackup": true,
-          "faceIDPermission": "ReceiptMind uses secure device storage to protect your local encryption key."
+          "faceIDPermission": "ReceiptMind uses Face ID to unlock your private purchase history when app lock is enabled."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "ReceiptMind uses Face ID to unlock your private purchase history when app lock is enabled."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#164D35",
+          "image": "./assets/splash-mark.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#164D35",
+            "image": "./assets/splash-mark.png"
+          }
+        }
+      ]
     ],
     "extra": {
-      "receiptAiEndpoint": ""
-    }
+      "receiptAiEndpoint": "",
+      "appVariant": "development",
+      "eas": {
+        "projectId": "cbfbaab1-8013-4be8-a472-b86742db3667"
+      }
+    },
+    "icon": "./assets/icon.png",
+    "owner": "shameem1189"
   }
 }

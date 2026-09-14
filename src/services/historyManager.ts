@@ -8,6 +8,7 @@ import { updateStructuredReceipt } from './receiptUpdate';
 import { StorageError } from './storageErrors';
 import { ReviewDraft } from './receiptReview';
 import { ExtractedReceipt, Receipt, ReceiptAsset, StorageProviderId } from '../types';
+import { clearLockSettings } from './deviceSecurity';
 
 export const RECEIPTS_KEY = '@receiptmind/receipts/encrypted-v1';
 const SETTINGS_KEY = '@receiptmind/settings/v1';
@@ -175,6 +176,7 @@ export class HistoryManager {
     await deleteEncryptionKey();
     await AsyncStorage.removeItem(SETTINGS_KEY);
     await AsyncStorage.removeItem(PENDING_KEY);
+    await clearLockSettings();
     await AsyncStorage.removeItem(RESET_KEY);
     this.update({ receipts: [], storageProvider: 'local', recovery: null, storageWarning: null });
   });
