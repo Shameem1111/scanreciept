@@ -23,7 +23,7 @@ const scope='https://www.googleapis.com/auth/drive.file';
 const ref='gdrive://accountA/fileA';
 const asset={uri:'file:///input.pdf',name:'PRIVATE CARD 1234.pdf',mimeType:'application/pdf'};
 function harness(os='android', env={EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:'123-test.apps.googleusercontent.com',EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID:'456-test.apps.googleusercontent.com'}) {
-  const state={account:'accountA',scope:true,token:'access-token-test',cancel:false,revoked:false,revocationFailure:false,signOutFailure:false,playServices:true,nativeFailure:false,scopeDenied:false};
+  const state={account:'accountA',scope:true,token:'access-token-test',idToken:'test-id-token',cancel:false,revoked:false,revocationFailure:false,signOutFailure:false,playServices:true,nativeFailure:false,scopeDenied:false};
   const calls=[], requests=[], opened=[], responses=[];
   const user=()=>({type:'success',data:{scopes:state.scope?[scope]:[],user:{id:state.account,email:'must-not-persist@example.invalid'}}});
   const sdk={
@@ -32,7 +32,7 @@ function harness(os='android', env={EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:'123-te
     signIn:async()=>{calls.push(['signIn']);if(state.nativeFailure)throw Error('native secret response');return state.cancel?{type:'cancelled'}:user();},
     signInSilently:async()=>{if(state.revoked)return {type:'noSavedCredentialFound'};return user();},
     addScopes:async options=>{calls.push(['addScopes',options]);if(state.scopeDenied)return {type:'cancelled'};state.scope=true;return user();},
-    getTokens:async()=>({accessToken:state.token,idToken:'unused-id-token'}),
+    getTokens:async()=>({accessToken:state.token,idToken:state.idToken}),
     clearCachedAccessToken:async token=>{calls.push(['invalidate',token]);state.token='fresh-token-test';},
     revokeAccess:async()=>{calls.push(['revoke']);if(state.revocationFailure)throw Error('offline secret');state.revoked=true;},
     signOut:async()=>{calls.push(['signOut']);if(state.signOutFailure)throw Error('failure secret');state.revoked=true;},
@@ -51,7 +51,7 @@ test('mobile OAuth requests drive.file without secrets, web client or server/off
   for(const os of ['android','ios']){
     const h=harness(os);await h.provider.connect();
     const options=h.calls.find(c=>c[0]==='configure')[1];
-    assert.deepEqual(Array.from(options.scopes),[scope]);assert.equal(options.offlineAccess,false);
+    assert.deepEqual(Array.from(options.scopes),[]);assert.equal(options.offlineAccess,false);
     assert.equal(options.webClientId,undefined);assert.equal(options.clientSecret,undefined);assert.equal(options.androidClientId,undefined);
     assert.equal(options.iosClientId,os==='ios'?'456-test.apps.googleusercontent.com':undefined);
     assert.equal(await h.provider.isAvailable(),true);
@@ -134,4 +134,23 @@ test('device reset can clear an Android native session even without OAuth enviro
   const h=harness('android',{});assert.equal(h.provider.isConfigured(),false);
   await h.provider.forgetConnection();assert.deepEqual(h.calls.map(c=>c[0]),['configure','signOut']);
   assert.equal(h.state.revoked,true);assert.equal(h.requests.length,0);
+});
+
+test('receipt auth uses public audience and native ID token without Drive scope', async()=>{
+  const h=harness('android',{EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:'123-test.apps.googleusercontent.com',EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:'789-test.apps.googleusercontent.com'});
+  h.state.scope=false; h.state.revoked=true;
+  assert.equal(await h.auth.receiptAuthorization(),'test-id-token');
+  const options=h.calls.find(c=>c[0]==='configure')[1];
+  assert.equal(options.webClientId,'789-test.apps.googleusercontent.com');
+  assert.deepEqual(Array.from(options.scopes),[]);
+  assert.equal(h.calls.some(c=>c[0]==='addScopes'),false);
+});
+test('receipt auth rejects missing config, cancelled consent, and missing ID tokens safely', async()=>{
+  await assert.rejects(harness().auth.receiptAuthorization(),/configuration/);
+  for (const mode of ['cancel','missingToken']) {
+    const h=harness('android',{EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:'123-test.apps.googleusercontent.com',EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:'789-test.apps.googleusercontent.com'});
+    h.state.revoked=true; h.state.cancel=mode==='cancel'; if(mode==='missingToken')h.state.idToken=null;
+    await assert.rejects(h.auth.receiptAuthorization(),/Sign in to read receipts/);
+    assert.equal(h.requests.length,0);
+  }
 });

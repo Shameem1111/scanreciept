@@ -6,28 +6,32 @@ const { test } = require('node:test');
 const ts = require('typescript');
 
 function loadWorker(fetch) {
-  const filename = path.resolve(__dirname, '../backend/receiptmind-worker/src/index.ts');
-  const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const exports = {};
-  vm.runInNewContext(code, {
-    exports, fetch, Request, Response, FormData, File, URL, Uint8Array, btoa,
-    AbortController, setTimeout, clearTimeout,
-    console: { warn: (event, details) => {
-      assert.equal(event, 'receipt_extraction_provider_error');
-      assert.deepEqual(Object.keys(details), ['status']);
-    } },
-  }, { filename });
-  return exports.default;
+  const cache = {};
+  function load(name) {
+    if (name === 'jose') return { createRemoteJWKSet: () => ({}), jwtVerify: async () => ({payload:{sub:'test-user'}}) };
+    if (name === 'cloudflare:workers') return { DurableObject: class {} };
+    const filename = path.resolve(__dirname, '../backend/receiptmind-worker/src', name + '.ts');
+    if (cache[filename]) return cache[filename];
+    const exports = cache[filename] = {};
+    const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    vm.runInNewContext(code, { exports, require: load, fetch, Request, Response, Headers, FormData, File, URL,
+      Uint8Array, TextEncoder, TextDecoder, crypto: require('node:crypto').webcrypto, btoa,
+      AbortController, setTimeout, clearTimeout, console: { log: () => {} } }, { filename });
+    return exports;
+  }
+  return load('index').default;
 }
 
 function request() {
   const form = new FormData();
-  form.append('receipt', new File(['synthetic test bytes'], 'receipt.jpg', { type: 'image/jpeg' }));
-  return new Request('https://receipt.example/receipt/extract', { method: 'POST', body: form });
+  form.append('receipt', new File([new Uint8Array([255,216,255,224]), 'synthetic test bytes'], 'receipt.jpg', { type: 'image/jpeg' }));
+  return new Request('https://receipt.example/receipt/extract', { method: 'POST', body: form, headers: {Authorization:'Bearer test', 'CF-Connecting-IP':'192.0.2.1'} });
 }
-const env = { GEMINI_API_KEY: 'test-only-key' };
+const env = { GEMINI_API_KEY: 'test-only-key', GOOGLE_WEB_CLIENT_ID:'test', ABUSE_HASH_KEY:'test-only-hmac-key-at-least-32-characters',
+ SCAN_GUARD:{getByName:()=>({consume:async()=>0})}, IP_REQUESTS_PER_MINUTE:'100', USER_REQUESTS_PER_MINUTE:'100',
+ USER_SCANS_PER_MONTH:'100', IP_SCANS_PER_DAY:'100', SCANS_ENABLED:'true', INPUT_USD_PER_MILLION:'1', OUTPUT_USD_PER_MILLION:'2' };
 const extraction = (name) => ({
   merchant: 'Test shop', purchaseDate: '2026-09-13', total: 1234.56, currency: 'EUR',
   items: [{ originalText: name, name, category: 'Food', quantity: 1, price: 1234.56, confidence: 0.9 }],
@@ -139,7 +143,7 @@ test('malformed AI output and unreadable receipts have distinct errors', async (
 
 test('invalid multipart input does not call the AI provider', async () => {
   const worker = loadWorker(() => assert.fail('No AI call for malformed upload'));
-  const response = await worker.fetch(new Request('https://receipt.example/receipt/extract', { method: 'POST', body: 'invalid' }), env);
+  const response = await worker.fetch(new Request('https://receipt.example/receipt/extract', { method: 'POST', body: 'invalid', headers:{Authorization:'Bearer test','CF-Connecting-IP':'192.0.2.1'} }), env);
   assert.equal(response.status, 400);
   assert.equal((await response.json()).code, 'INVALID_UPLOAD');
 });

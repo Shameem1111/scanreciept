@@ -30,6 +30,7 @@ const { convertFormDataAsync } = loadExpo('winter/fetch/convertFormData');
 // Exercise the actual TypeScript service without loading the native Expo runtime.
 function loadService(endpoint, fetch, readFile = async () => new TextEncoder().encode('receipt file bytes').buffer) {
   function load(relativePath) {
+    if (relativePath === './googleDriveAuth') return { receiptAuthorization: async () => 'test-id-token' };
     if (relativePath === 'expo/fetch') return { fetch: async (url, options) => {
       const encoded = await convertFormDataAsync(options.body);
       return fetch(url, { ...options, encoded });
@@ -85,6 +86,8 @@ test('blank endpoint uses the configured default service', async () => {
 test('uploads the selected asset and returns real sanitized items', async () => {
   const service = loadService('https://receipt.example/extract', async (url, options) => {
     assert.equal(url, 'https://receipt.example/extract');
+    assert.equal(options.headers.Authorization, 'Bearer test-id-token');
+    assert.equal(options.redirect, 'error');
     const upload = options.body.get('receipt');
     assert.equal(typeof upload.bytes, 'function');
     assert.equal(new TextDecoder().decode(await upload.bytes()), 'receipt file bytes');
@@ -160,4 +163,15 @@ test('client allows missing or ambiguous dates into review without retaining arb
     const service = loadService(undefined, async () => response({ ...result, purchaseDate }));
     assert.equal((await service.extractReceipt(asset)).purchaseDate, '');
   }
+});
+
+test('authentication and allowance errors never display server details', async()=>{
+  for (const code of ['AUTH_REQUIRED','AUTH_INVALID','RATE_LIMITED','SCAN_ALLOWANCE_EXHAUSTED']) {
+    const service=loadService(undefined,async()=>({ok:false,status:429,json:async()=>({code,error:'PRIVATE RECEIPT CONTENT'})}));
+    await assert.rejects(service.extractReceipt(asset),error=>!error.message.includes('PRIVATE') && !error.message.includes('failed (429)'));
+  }
+});
+test('non-TLS extraction endpoint is rejected before file access or sending credentials', async()=>{
+  const service=loadService('http://receipt.example/extract',()=>assert.fail('No upload'));
+  await assert.rejects(service.extractReceipt(asset),/not configured/);
 });

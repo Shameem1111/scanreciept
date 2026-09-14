@@ -17,7 +17,7 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 - AES-GCM encrypted local structured purchase history with search, dashboard and constrained English/German purchase queries.
 - Storage-provider selector for **This device / Google Drive / iCloud Drive**.
 - Privacy filter and data model intentionally exclude card numbers, IBAN/BIC, bank accounts, terminal IDs, authorization codes and payment references.
-- A deployable Cloudflare Worker proxies privacy-aware Gemini receipt extraction without exposing the Gemini key to the mobile app.
+- An authenticated Cloudflare Worker verifies Google ID tokens, applies persistent per-user/IP limits and scan allowances, and meters Gemini usage without logging receipts. See [Worker security and setup](backend/receiptmind-worker/README.md) and [manual deployment](backend/receiptmind-worker/DEPLOYMENT.md).
 
 The checked-in mobile configuration defaults to the deployed ReceiptMind Cloudflare Worker. `EXPO_PUBLIC_RECEIPT_AI_ENDPOINT` can override that public URL for another environment; AI-provider secrets remain server-side.
 
@@ -82,7 +82,7 @@ Questions containing payment/banking information are rejected and redacted befor
 
 ## Real AI extraction
 
-Do not put a Gemini/OpenAI secret in Expo environment variables. Deploy the included Worker from `backend/receiptmind-worker`, add `GEMINI_API_KEY` as a Cloudflare encrypted secret, and set:
+Do not put a Gemini/OpenAI secret in Expo environment variables. Follow the separate [manual Worker deployment guide](backend/receiptmind-worker/DEPLOYMENT.md) to configure authentication, secrets, allowances and pricing. The endpoint URL remains public:
 
 ```bash
 EXPO_PUBLIC_RECEIPT_AI_ENDPOINT=https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract
@@ -144,7 +144,7 @@ No working OAuth credentials have been supplied or committed. Create the followi
 1. Enable **Google Drive API** in APIs & Services. Configure Google Auth Platform branding, support contact, audience and consent. Add `drive.file` in Data Access. During testing, add the Google accounts you will use as test users. Complete Google's publishing/verification requirements for your audience before production. [Consent setup](https://developers.google.com/workspace/guides/configure-oauth-consent)
 2. **Android:** create an OAuth client of application type **Android**, package `com.shameem.receiptmind`, with the SHA-1 of the certificate actually signing the installed app. Register separate clients for debug, EAS/release and Google Play app-signing certificates as needed; an upload-key fingerprint alone is insufficient for Play-signed installs. Get local fingerprints with `gradlew signingReport` in the generated Android project, or use EAS credentials / Play Console App integrity for those builds. Put that build's public Android client ID in `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`. This is a setup gate: the native Android SDK identifies the registered OAuth client using package + signing certificate, so it does **not** accept an `androidClientId` configure parameter. [Android registration details](https://react-native-google-signin.github.io/docs/setting-up/get-config-file)
 3. **iOS:** create an OAuth client of application type **iOS** with bundle ID `com.shameem.receiptmind`. Set its public client ID as `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`. `app.config.ts` derives the reversed client ID and configures the native URL scheme through the library's Expo plugin. Verify it matches the iOS URL scheme displayed in Console. Rebuild if the client ID changes. [iOS URL scheme setup](https://react-native-google-signin.github.io/docs/setting-up/ios)
-4. Copy `.env.example` to an untracked `.env` and fill only the mobile public client IDs. Supply the same variables to native build environments. A client secret, web/server OAuth client, refresh-token backend, Firebase config or shared Drive folder is **not** required by this implementation. Do not create fake values to make the UI appear configured.
+4. Copy `.env.example` to an untracked `.env` and fill only the mobile public client IDs. Supply the same variables to native build environments. Receipt sign-in also requires a public Web OAuth client ID: set `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and matching Worker `GOOGLE_WEB_CLIENT_ID`. No client secret, refresh-token backend, Firebase config or shared Drive folder is needed. Do not create fake values to make the UI appear configured.
 5. Run `npm install`, then build with `npx expo run:android` or `npx expo run:ios` (macOS/Xcode required for iOS), or use a configured EAS development/release build. Google Play services must be available on Android. Do not test Drive sign-in in Expo Go: it does not contain the native SDK. Android needs no Firebase Gradle plugin; native module autolinking handles it. The Expo plugin is added when the real iOS client ID is supplied. [Expo native-build setup](https://react-native-google-signin.github.io/docs/setting-up/expo)
 
 `EXPO_PUBLIC_RECEIPT_AI_ENDPOINT` remains the public receipt-extraction Worker endpoint. A URL such as `https://drive.google.com/drive/folders/...` is a Drive UI link, **never a backend/API endpoint or an OAuth client ID**. Drive uploads use fixed Google API URLs inside the provider; they do not use that AI endpoint variable.
@@ -190,16 +190,16 @@ Before release, compile/sign and install on a physical iPhone. Test PDF/image sa
 - Sensitive-looking payment lines are rejected by both the extraction backend and client sanitizer.
 - Original receipts are not stored by the ReceiptMind backend.
 - No AI secret is shipped in the mobile binary or committed to GitHub.
-- For production, add authentication and rate limiting, and use AI provider terms appropriate for receipt privacy.
+- Receipt extraction requires Google sign-in in a native build. Limits and metering run in Cloudflare. The Worker retains no receipt content; Google may retain prompts for abuse monitoring. Review the Worker deployment document before release.
 - If structured records later move to a backend, use per-user row-level access, encryption, and GDPR-compliant retention/deletion policies.
 
 ## Production next steps
 
 1. Complete Google Console registration and validate the implemented Drive provider on signed Android/iOS builds.
 2. Configure Apple iCloud container/signing and validate the implemented provider on a signed physical iPhone.
-3. Deploy the included Cloudflare Worker, configure its secret, and add production authentication/rate limiting.
+3. Configure and manually deploy the secured Worker after reviewing OAuth, limits, provider retention and pricing in its deployment guide. Scans default to disabled.
 4. For larger datasets, migrate the encrypted blob store to SQLCipher/local SQLite while preserving the same encryption/privacy model.
-5. Add authentication, per-user RLS, subscription limits and cost metering.
+5. If adding backend history sync, add per-user RLS. Paid subscription entitlement management remains separate from the configured scan allowance.
 6. Add test coverage and EAS build profiles for Play Store/TestFlight.
 
 ## User-controlled data management

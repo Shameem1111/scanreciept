@@ -1,14 +1,16 @@
-interface Env {
+import { boundedBody, type SecurityEnv } from './security';
+import { handleRequest } from './handler';
+export { ScanGuard } from './security';
+
+export interface Env extends SecurityEnv {
   GEMINI_API_KEY: string;
-  GEMINI_MODEL?: string;
 }
 
-const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
 const MAX_ITEMS = 250;
 const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
 const PROVIDER_TIMEOUT_MS = 45_000;
 
-class ExtractionError extends Error {
+export class ExtractionError extends Error {
   constructor(readonly code: string, message: string, readonly status: number) {
     super(message);
   }
@@ -26,12 +28,6 @@ function providerError(status: number): ExtractionError {
   }
   return new ExtractionError('PROVIDER_UNAVAILABLE', 'The AI service is temporarily unavailable. Please try again shortly.', 503);
 }
-const ALLOWED_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'application/pdf',
-]);
 const ALLOWED_CATEGORIES = new Set([
   'Food',
   'Medicine',
@@ -84,21 +80,6 @@ const receiptSchema = {
     },
   },
 };
-
-function headers(): HeadersInit {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Accept, Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Cache-Control': 'no-store',
-    'Content-Type': 'application/json; charset=utf-8',
-    'X-Content-Type-Options': 'nosniff',
-  };
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: headers() });
-}
 
 function isSensitivePaymentText(value: string): boolean {
   const normalized = value.normalize('NFKC').replace(/[\u0000-\u001F\u007F\u200B-\u200D\uFEFF]/g, '');
@@ -173,19 +154,6 @@ function sanitizeExtraction(input: unknown): Record<string, unknown> {
   };
 }
 
-function inferMimeType(file: File): string {
-  if (ALLOWED_MIME_TYPES.has(file.type)) return file.type;
-  const extension = file.name.toLowerCase().split('.').pop();
-  const byExtension: Record<string, string> = {
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    webp: 'image/webp',
-    pdf: 'application/pdf',
-  };
-  return extension ? byExtension[extension] ?? '' : '';
-}
-
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunks: string[] = [];
@@ -205,7 +173,7 @@ function extractGeminiJson(payload: unknown): unknown {
   return JSON.parse(withoutFence);
 }
 
-async function extractReceipt(file: File, mimeType: string, env: Env): Promise<Record<string, unknown>> {
+export async function extractReceipt(file: File, mimeType: string, env: Env, usage: Usage): Promise<Record<string, unknown>> {
   const model = (env.GEMINI_MODEL || DEFAULT_MODEL).trim();
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const receiptBase64 = arrayBufferToBase64(await file.arrayBuffer());
@@ -255,26 +223,37 @@ async function extractReceipt(file: File, mimeType: string, env: Env): Promise<R
         }],
         generationConfig: {
           temperature: 0,
+          maxOutputTokens: 8192,
           responseMimeType: 'application/json',
           responseJsonSchema: receiptSchema,
         },
       }),
     };
 
+    usage.providerAttempts++;
     let response = await fetch(endpoint, options);
     // Retry only transient provider failures, within the same overall timeout.
     if ([500, 502, 503, 504].includes(response.status)) {
       await response.body?.cancel();
       await new Promise((resolve) => setTimeout(resolve, 500));
+      usage.providerAttempts++;
       response = await fetch(endpoint, options);
     }
     if (!response.ok) {
-      console.warn('receipt_extraction_provider_error', { status: response.status });
+      await response.body?.cancel();
       throw providerError(response.status);
     }
     let extracted: Record<string, unknown>;
     try {
-      extracted = sanitizeExtraction(extractGeminiJson(await response.json()));
+      const payload = JSON.parse(new TextDecoder().decode(await boundedBody(response.body, 1024 * 1024, PROVIDER_TIMEOUT_MS)));
+      const metadata = payload?.usageMetadata;
+      usage.inputTokens = tokenCount(metadata?.promptTokenCount);
+      usage.outputTokens = tokenCount(metadata?.candidatesTokenCount) + tokenCount(metadata?.thoughtsTokenCount);
+      usage.usageReported = Boolean(metadata &&
+        Number.isSafeInteger(metadata.promptTokenCount) && metadata.promptTokenCount >= 0 &&
+        Number.isSafeInteger(metadata.candidatesTokenCount) && metadata.candidatesTokenCount >= 0 &&
+        (metadata.thoughtsTokenCount === undefined || (Number.isSafeInteger(metadata.thoughtsTokenCount) && metadata.thoughtsTokenCount >= 0)));
+      extracted = sanitizeExtraction(extractGeminiJson(payload));
     } catch {
       if (controller.signal.aborted) throw new ExtractionError('PROVIDER_TIMEOUT', 'Receipt reading took too long. Please try again.', 504);
       throw new ExtractionError('INVALID_AI_RESPONSE', 'The AI service could not return a readable receipt result. Please try again.', 502);
@@ -292,43 +271,8 @@ async function extractReceipt(file: File, mimeType: string, env: Env): Promise<R
   }
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: headers() });
-    if (request.method === 'GET' && url.pathname === '/health') {
-      return json({ ok: true, service: 'receiptmind-api' });
-    }
-    if (url.pathname !== '/receipt/extract') return json({ error: 'Not found' }, 404);
-    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-    if (!env.GEMINI_API_KEY?.trim()) return json({ code: 'PROVIDER_CONFIG', error: 'Receipt extraction is not configured' }, 503);
-
-    const contentLength = Number(request.headers.get('content-length') ?? 0);
-    if (contentLength > MAX_RECEIPT_BYTES + 1024 * 1024) {
-      return json({ error: 'Receipt file is too large. Maximum size is 10 MB.' }, 413);
-    }
-
-    try {
-      let form: FormData;
-      try {
-        form = await request.formData();
-      } catch {
-        return json({ code: 'INVALID_UPLOAD', error: 'Receipt upload was invalid. Select the file again and retry.' }, 400);
-      }
-      const entry = form.get('receipt');
-      if (!(entry instanceof File)) return json({ error: 'Multipart field "receipt" is required' }, 400);
-      if (entry.size === 0) return json({ error: 'Receipt file is empty' }, 400);
-      if (entry.size > MAX_RECEIPT_BYTES) {
-        return json({ error: 'Receipt file is too large. Maximum size is 10 MB.' }, 413);
-      }
-
-      const mimeType = inferMimeType(entry);
-      if (!mimeType) return json({ error: 'Use a JPEG, PNG, WebP, or PDF receipt.' }, 415);
-      return json(await extractReceipt(entry, mimeType, env));
-    } catch (error) {
-      // Do not expose provider responses or receipt contents to the client or logs.
-      if (error instanceof ExtractionError) return json({ code: error.code, error: error.message }, error.status);
-      return json({ error: 'Receipt extraction failed. Please try again.' }, 502);
-    }
-  },
-} satisfies ExportedHandler<Env>;
+export type Usage = { providerAttempts: number; inputTokens: number; outputTokens: number; usageReported: boolean };
+function tokenCount(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+export default { fetch: handleRequest } satisfies ExportedHandler<Env>;

@@ -5,5 +5,39 @@ compatibility_date = "2026-09-13"
 workers_dev = true
 preview_urls = false
 
+# This repository is released manually; a push must not deploy this Worker.
+[build]
+command = "node scripts/manual-release.cjs"
+
 [vars]
 GEMINI_MODEL = "gemini-3.1-flash-lite"
+GOOGLE_WEB_CLIENT_ID = ""
+ALLOWED_ORIGINS = ""
+SCANS_ENABLED = "false"
+USER_REQUESTS_PER_MINUTE = "6"
+IP_REQUESTS_PER_MINUTE = "30"
+USER_SCANS_PER_MONTH = "50"
+IP_SCANS_PER_DAY = "200"
+# Set the current model's USD prices before enabling scans. Empty fails closed.
+INPUT_USD_PER_MILLION = ""
+OUTPUT_USD_PER_MILLION = ""
+
+[[durable_objects.bindings]]
+name = "SCAN_GUARD"
+class_name = "ScanGuard"
+
+[[migrations]]
+tag = "v1-scan-guard"
+new_sqlite_classes = ["ScanGuard"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0

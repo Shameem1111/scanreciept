@@ -3,6 +3,7 @@ import { fetch } from 'expo/fetch';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
 import { validPurchaseDate } from './receiptReview';
 import { sanitizeItemText, sanitizeMerchant } from './privacy';
+import { receiptAuthorization } from './googleDriveAuth';
 
 const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other']);
 
@@ -10,6 +11,17 @@ const DEFAULT_RECEIPT_AI_ENDPOINT =
   'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract';
 const endpoint = process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT?.trim() || DEFAULT_RECEIPT_AI_ENDPOINT;
 const extractionErrors: Record<string, string> = {
+  AUTH_REQUIRED: 'Sign in to read receipts, then retry.',
+  AUTH_INVALID: 'Your receipt sign-in expired. Sign out in Settings, sign in and retry.',
+  AUTH_UNAVAILABLE: 'Sign-in verification is temporarily unavailable. Try again shortly.',
+  RATE_LIMITED: 'Too many scan requests. Wait a minute before trying again.',
+  SCAN_ALLOWANCE_EXHAUSTED: 'The scan allowance has been reached for this account or network. Try after it resets.',
+  SCANS_DISABLED: 'Receipt scanning is temporarily paused. Try again later.',
+  SERVICE_CONFIG: 'Receipt scanning needs service configuration. Contact the service owner.',
+  LIMITER_UNAVAILABLE: 'Receipt scanning is temporarily unavailable. Try again shortly.',
+  UPLOAD_TOO_LARGE: 'Choose a receipt file smaller than 10 MB.',
+  UNSUPPORTED_FILE: 'Choose a valid JPEG, PNG, WebP or PDF receipt.',
+  UPLOAD_TIMEOUT: 'The receipt upload timed out. Check your connection and retry.',
   PROVIDER_AUTH: 'The receipt AI service credentials need attention. The service owner must check the backend API key.',
   PROVIDER_CONFIG: 'The receipt AI service is not configured correctly. The service owner must check the backend API key and model.',
   PROVIDER_QUOTA: 'The receipt AI service scan limit has been reached. Try later; the service owner may need to check quota or billing.',
@@ -54,10 +66,11 @@ function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
 }
 
 export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedReceipt> {
-  if (!endpoint) {
+  if (!/^https:\/\//i.test(endpoint)) {
     throw new Error('Receipt reading is not configured in this build. Configure the receipt extraction service and restart the app, then retry.');
   }
 
+  const token = await receiptAuthorization();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
@@ -70,7 +83,8 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
     const response = await fetch(endpoint, {
       method: 'POST',
       body: form,
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      redirect: 'error',
       signal: controller.signal,
     });
 

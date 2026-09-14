@@ -6,6 +6,7 @@ import { storageProviders } from '../services/storage';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
 import { StorageProviderId } from '../types';
+import { forgetGoogleConnection } from '../services/googleDriveAuth';
 
 const options: { id: StorageProviderId; title: string; subtitle: string }[] = [
   { id: 'local', title: '📱 This device', subtitle: 'Working now. Originals stay in ReceiptMind local files.' },
@@ -63,6 +64,10 @@ export function SettingsScreen() {
         <PrimaryButton label="Retry original cleanup" disabled={busy || !hydrated || !!recovery} onPress={() => { void run(retryStorageCleanup); }} />
       </Card>}
       <SectionTitle>Original receipt storage</SectionTitle>
+      <Card>
+        <Text style={styles.note}>Receipt reading requires Google sign-in and has a scan allowance. Sign-in does not select Google Drive storage. Signing out also disconnects Drive on this device; saved history stays available.</Text>
+        <PrimaryButton label="Sign out of Google" disabled={busy} onPress={() => { void run(forgetGoogleConnection); }} />
+      </Card>
       <View style={{ gap: 10 }}>
         {options.map((option) => {
           const selected = storageProvider === option.id;

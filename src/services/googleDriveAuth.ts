@@ -26,11 +26,29 @@ function configuredSdk() {
   if (!isGoogleConfigured()) throw new StorageError(setupMessage);
   const client = sdk();
   if (!configured) {
-    client.configure({ scopes: [DRIVE_SCOPE], offlineAccess: false,
+    client.configure({ scopes: [], offlineAccess: false,
+      ...(CLIENT_ID.test(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '') ? { webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID } : {}),
       ...(Platform.OS === 'ios' ? { iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID } : {}) });
     configured = true;
   }
   return client;
+}
+// Uses the same native SDK session as Drive, but never requests Drive permission.
+// Only the public web client ID is shipped. Tokens stay in native SDK storage/memory.
+export async function receiptAuthorization(): Promise<string> {
+  if (!CLIENT_ID.test(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '')) {
+    throw new Error('Receipt sign-in needs OAuth configuration and a native app build. Contact the service owner.');
+  }
+  const client = configuredSdk();
+  try {
+    if (!await client.hasPlayServices({ showPlayServicesUpdateDialog: true })) throw new Error();
+    const silent = await client.signInSilently();
+    const result = silent.type === 'success' ? silent : await client.signIn();
+    if (result.type !== 'success') throw new Error();
+    const { idToken } = await client.getTokens();
+    if (!idToken) throw new Error();
+    return idToken;
+  } catch { throw new Error('Sign in to read receipts. Sign-in was cancelled or unavailable; try again.'); }
 }
 export async function connectGoogle(): Promise<void> {
   const client = configuredSdk();
