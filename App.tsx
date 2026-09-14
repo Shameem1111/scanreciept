@@ -6,7 +6,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { PurchasesScreen } from './src/screens/PurchasesScreen';
 import { ScanScreen } from './src/screens/ScanScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
-import { ReceiptStoreProvider } from './src/store/ReceiptStore';
+import { ReceiptStoreProvider, useReceiptStore } from './src/store/ReceiptStore';
 import { colors } from './src/theme';
 
 type Tab = 'home' | 'scan' | 'purchases' | 'ask' | 'settings';
@@ -20,8 +20,9 @@ const tabs: { id: Tab; icon: string; label: string }[] = [
 ];
 
 function AppShell() {
+  const { hydrated, recovery } = useReceiptStore();
   const [tab, setTab] = useState<Tab>('home');
-  const screen = tab === 'home' ? <HomeScreen /> : tab === 'scan' ? <ScanScreen /> : tab === 'purchases' ? <PurchasesScreen /> : tab === 'ask' ? <AskScreen /> : <SettingsScreen />;
+  const screen = !hydrated ? <Text style={{ padding: 24 }}>Loading encrypted history...</Text> : recovery ? <SettingsScreen /> : tab === 'home' ? <HomeScreen /> : tab === 'scan' ? <ScanScreen /> : tab === 'purchases' ? <PurchasesScreen /> : tab === 'ask' ? <AskScreen /> : <SettingsScreen />;
 
   return (
     <SafeAreaView style={styles.safe}>

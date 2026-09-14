@@ -1,83 +1,18 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
-import { getEncryptedJson, removeEncryptedJson, setEncryptedJson } from '../services/encryptedStore';
-import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
-import { updateStructuredReceipt } from '../services/receiptUpdate';
-import { sanitizeItemText } from '../services/privacy';
-import { Receipt, StorageProviderId } from '../types';
+import React, { createContext, PropsWithChildren, useContext, useEffect, useState } from 'react';
+import { HistoryManager, HistoryState } from '../services/historyManager';
 
-const RECEIPTS_KEY = '@receiptmind/receipts/encrypted-v1';
-const SETTINGS_KEY = '@receiptmind/settings/v1';
-
-type ReceiptStoreValue = {
-  receipts: Receipt[];
-  storageProvider: StorageProviderId;
-  hydrated: boolean;
-  addReceipt: (receipt: Receipt) => Promise<void>;
-  updateReceipt: (id: string, draft: ReviewDraft) => Promise<void>;
-  setStorageProvider: (provider: StorageProviderId) => Promise<void>;
-  clearAll: () => Promise<void>;
-};
-
+type ReceiptStoreValue = HistoryState & Pick<HistoryManager, 'addReceipt' | 'saveReceipt' | 'updateReceipt' | 'deleteReceipt' | 'setStorageProvider' | 'deleteHistory' | 'deleteEverything' | 'exportPurchaseHistory' | 'hydrate'>;
 const ReceiptStoreContext = createContext<ReceiptStoreValue | null>(null);
-
 export function ReceiptStoreProvider({ children }: PropsWithChildren) {
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [storageProvider, setStorageProviderState] = useState<StorageProviderId>('local');
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const [savedReceipts, settingsJson] = await Promise.all([
-          getEncryptedJson<Receipt[]>(RECEIPTS_KEY),
-          AsyncStorage.getItem(SETTINGS_KEY),
-        ]);
-        if (savedReceipts) setReceipts(savedReceipts);
-        if (settingsJson) {
-          const settings = JSON.parse(settingsJson) as { storageProvider?: StorageProviderId };
-          if (settings.storageProvider) setStorageProviderState(settings.storageProvider);
-        }
-      } finally {
-        setHydrated(true);
-      }
-    })();
-  }, []);
-
-  async function addReceipt(receipt: Receipt) {
-    const checked = validateReview(createReviewDraft(receipt));
-    if (!checked.receipt) throw new Error('Correct the receipt fields before saving.');
-    const clean: Receipt = { ...checked.receipt, id: receipt.id, storageProvider: receipt.storageProvider,
-      storageReference: receipt.storageReference, originalFilename: sanitizeItemText(receipt.originalFilename), createdAt: receipt.createdAt };
-    const next = [clean, ...receipts];
-    await setEncryptedJson(RECEIPTS_KEY, next);
-    setReceipts(next);
-  }
-
-  async function updateReceipt(id: string, draft: ReviewDraft) {
-    const next = updateStructuredReceipt(receipts, id, draft);
-    await setEncryptedJson(RECEIPTS_KEY, next);
-    setReceipts(next);
-  }
-
-  async function setStorageProvider(provider: StorageProviderId) {
-    setStorageProviderState(provider);
-    await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify({ storageProvider: provider }));
-  }
-
-  async function clearAll() {
-    setReceipts([]);
-    await removeEncryptedJson(RECEIPTS_KEY);
-  }
-
-  const value = useMemo(
-    () => ({ receipts, storageProvider, hydrated, addReceipt, updateReceipt, setStorageProvider, clearAll }),
-    [receipts, storageProvider, hydrated],
-  );
-
+  const [state, setState] = useState<HistoryState>({ receipts: [], storageProvider: 'local', hydrated: false, recovery: null });
+  const [manager] = useState(() => new HistoryManager(setState));
+  useEffect(() => { void manager.hydrate(); }, [manager]);
+  const value: ReceiptStoreValue = { ...state, addReceipt: manager.addReceipt, saveReceipt: manager.saveReceipt,
+    updateReceipt: manager.updateReceipt, deleteReceipt: manager.deleteReceipt, setStorageProvider: manager.setStorageProvider,
+    deleteHistory: manager.deleteHistory, deleteEverything: manager.deleteEverything,
+    exportPurchaseHistory: manager.exportPurchaseHistory, hydrate: manager.hydrate };
   return <ReceiptStoreContext.Provider value={value}>{children}</ReceiptStoreContext.Provider>;
 }
-
 export function useReceiptStore() {
   const context = useContext(ReceiptStoreContext);
   if (!context) throw new Error('useReceiptStore must be used inside ReceiptStoreProvider');

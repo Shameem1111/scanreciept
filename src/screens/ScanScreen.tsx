@@ -7,13 +7,14 @@ import { ReceiptReview } from '../components/ReceiptReview';
 import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
 import { demoReceipt } from '../data';
 import { extractReceipt } from '../services/receiptAi';
-import { saveReceiptAsset, storageProviders } from '../services/storage';
+import { storageProviders } from '../services/storage';
 import { useReceiptStore } from '../store/ReceiptStore';
+import { hasDuplicate } from '../services/historyData';
 import { colors } from '../theme';
-import { Receipt, ReceiptAsset } from '../types';
+import { ReceiptAsset } from '../types';
 
 export function ScanScreen() {
-  const { addReceipt, storageProvider } = useReceiptStore();
+  const { saveReceipt, receipts, storageProvider } = useReceiptStore();
   const [asset, setAsset] = useState<ReceiptAsset | null>(null);
   const [extracted, setExtracted] = useState<ReviewDraft | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,7 +65,7 @@ export function ScanScreen() {
     setExtracted(createReviewDraft(demoReceipt));
   }
 
-  async function save() {
+  async function save(allowDuplicate = false) {
     if (busy || !asset || !extracted) return;
     const checked = validateReview(extracted);
     if (!checked.receipt) return Alert.alert('Check receipt', 'Correct the marked fields before saving.');
@@ -75,27 +76,20 @@ export function ScanScreen() {
       );
     }
 
-    const receiptId = `receipt-${Date.now()}`;
+    if (!allowDuplicate && hasDuplicate(receipts, checked.receipt)) {
+      Alert.alert('Possible duplicate receipt', 'A receipt with the same merchant, date and total already exists. Check Purchases before saving another copy.', [
+        { text: 'Cancel', style: 'cancel' }, { text: 'Save anyway', onPress: () => { void save(true); } },
+      ]);
+      return;
+    }
     setBusy(true);
     try {
-      const saved = asset.uri
-        ? await saveReceiptAsset(storageProvider, asset, receiptId)
-        : { provider: storageProvider, reference: 'demo://receipt' };
-
-      const receipt: Receipt = {
-        ...checked.receipt,
-        id: receiptId,
-        storageProvider: saved.provider,
-        storageReference: saved.reference,
-        originalFilename: asset.name,
-        createdAt: new Date().toISOString(),
-      };
-      await addReceipt(receipt);
+      await saveReceipt(checked.receipt, asset, allowDuplicate);
       setAsset(null);
       setExtracted(null);
       Alert.alert('Receipt saved', 'Purchase items are now searchable. Payment/card/bank details are never added to the purchase database.');
     } catch (error) {
-      Alert.alert('Could not save receipt', error instanceof Error ? error.message : 'Unknown error');
+      Alert.alert('Could not save receipt', 'Purchase history could not be saved. Free device storage, unlock the device and retry. Check Settings if recovery is required.');
     } finally {
       setBusy(false);
     }
@@ -125,7 +119,7 @@ export function ScanScreen() {
       {asset && !asset.uri ? <Card><Text style={styles.small}>Demo receipt selected.</Text></Card> : null}
       {asset?.mimeType === 'application/pdf' ? <Card><Text style={styles.small}>PDF selected: {asset.name}</Text></Card> : null}
 
-      {extracted && <ReceiptReview draft={extracted} onChange={setExtracted} onSave={save} busy={busy} />}
+      {extracted && <ReceiptReview draft={extracted} onChange={setExtracted} onSave={() => save()} busy={busy} />}
       <View style={{ height: 40 }} />
     </ScrollView>
   );

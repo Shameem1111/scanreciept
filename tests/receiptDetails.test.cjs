@@ -22,16 +22,22 @@ function loader(mocks = {}) {
 function storage(os = 'android') {
   const files = new Map(); const opened = []; const shared = [];
   const state = { fail: false };
-  class Directory { constructor(...parts) { this.uri = parts.map(x => x.uri ?? x).join('/'); } exists = true; }
+  class Directory {
+    constructor(...parts) { this.uri = parts.map(x => x.uri ?? x).join('/'); }
+    exists = true;
+    delete() { for (const uri of files.keys()) if (uri.startsWith(this.uri + '/')) files.delete(uri); }
+    list() { return [...files.keys()].filter(uri => uri.startsWith(this.uri + '/')).map(uri => new File(uri)); }
+  }
   class File {
     constructor(...parts) { this.uri = parts.map(x => x.uri ?? x).join('/'); }
     get exists() { return files.has(this.uri); }
     get type() { return ''; }
     get contentUri() { return 'content://receipt/' + this.uri.split('/').pop(); }
+    delete() { files.delete(this.uri); }
     async copy(destination) { files.set(destination.uri, true); }
   }
   const service = loader({
-    'expo-file-system': { Directory, File, Paths: { document: 'file:///current/Documents' } },
+    'expo-file-system': { Directory, File, Paths: { document: 'file:///current/Documents', cache: 'file:///current/Cache' } },
     'react-native': { Platform: { OS: os } },
     'expo-intent-launcher': { startActivityAsync: async (...args) => { if (state.fail) throw Error('No viewer'); opened.push(args); } },
     'expo-sharing': { isAvailableAsync: async () => true, shareAsync: async (...args) => shared.push(args) },
@@ -101,23 +107,18 @@ test('receipt updates retain original metadata despite a missing file or injecte
   draft.items[0].name = 'VISA **1234';
   assert.throws(() => updateStructuredReceipt([old], old.id, draft), /Correct/);
 });
-test('store updates use encrypted persistence, publish only after success and retain state on write failure', async () => {
-  for (const fail of [false, true]) {
-    const old = original(); let published; let encrypted; let stateCall = 0;
-    const react = { createContext: () => ({ Provider: 'provider' }), useState: () => {
-      const index = stateCall++; return [index === 0 ? [old] : index === 1 ? 'google-drive' : true, value => { if (index === 0) published = value; }];
-    }, useEffect: () => {}, useMemo: fn => fn(), createElement: (_, props) => props };
-    const load = loader({ react: { ...react, default: react }, '@react-native-async-storage/async-storage': { default: {} },
-      '../services/encryptedStore': { setEncryptedJson: async (key, value) => { encrypted = { key, value }; if (fail) throw Error('disk full'); } } });
-    const { ReceiptStoreProvider } = load('store/ReceiptStore.tsx');
-    const { createReviewDraft } = load('services/receiptReview');
-    const store = ReceiptStoreProvider({ children: null }).value;
-    const draft = createReviewDraft(old); draft.merchant = 'Updated shop';
-    if (fail) { await assert.rejects(store.updateReceipt(old.id, draft), /disk full/); assert.equal(published, undefined); }
-    else { await store.updateReceipt(old.id, draft); assert.equal(published[0].merchant, 'Updated shop'); }
-    assert.equal(encrypted.key, '@receiptmind/receipts/encrypted-v1');
-    assert.equal(encrypted.value[0].storageProvider, 'local');
-    assert.equal(encrypted.value[0].storageReference, old.storageReference);
-    assert.equal(old.merchant, 'Shop');
+
+test('local deletion is scoped to managed originals and whole-device cleanup also removes cached inputs', async () => {
+  const { service, files } = storage();
+  const original = 'file:///current/Documents/ReceiptMind/Receipts/old.pdf';
+  files.set(original, true); files.set('file:///outside/source.pdf', true);
+  await service.storageProviders.local.deleteReceipt(reference('old.pdf').storageReference);
+  assert.equal(files.has(original), false);
+  await service.storageProviders.local.deleteReceipt(reference('old.pdf').storageReference);
+  for (const ref of ['file:///outside/source.pdf', reference('../source.pdf').storageReference, reference('%2fsource.pdf').storageReference]) {
+    await assert.rejects(service.storageProviders.local.deleteReceipt(ref));
   }
+  files.set(original, true); files.set('file:///current/Cache/DocumentPicker/input.pdf', true);
+  await service.storageProviders.local.deleteAll();
+  assert.equal(files.size, 1); assert.equal(files.has('file:///outside/source.pdf'), true);
 });

@@ -150,3 +150,21 @@ Automatic Google Drive upload needs Google OAuth client IDs and Drive `drive.fil
 4. For larger datasets, migrate the encrypted blob store to SQLCipher/local SQLite while preserving the same encryption/privacy model.
 5. Add authentication, per-user RLS, subscription limits and cost metering.
 6. Add test coverage and EAS build profiles for Play Store/TestFlight.
+
+## User-controlled data management
+
+Settings offers a versioned JSON export of structured purchase history (including original references, without original files or the encryption key). Export is explicitly confirmed because the JSON is readable. Its temporary cache file is removed after the native share sheet closes, including on failure, and on the next successful startup after an interruption. Copies shared or saved elsewhere require separate deletion.
+
+- **Delete receipt** in receipt details removes that receipt and its structured items, retaining its original file.
+- **Delete purchase history only** removes the encrypted history; all originals and the device encryption key remain.
+- **Delete everything from this device** removes encrypted history, all originals in ReceiptMind's local receipt directory (including ones retained after history-only deletion), app cache including picker/camera copies and temporary exports, settings and the SecureStore encryption key. A durable reset marker blocks normal use until an interrupted deletion is completed.
+
+Google Drive/iCloud originals require separate deletion through those services unless a provider implements deletion. This build does not support external original deletion. Imported source files outside the app and exported copies are not removed.
+
+Unreadable ciphertext, missing keys and malformed structured history show a recovery screen instead of an empty purchase database. Retry after unlocking the device, or explicitly reset history. Writes and exports stay blocked during recovery; reading never generates a replacement key. Storage/save failures keep the previous structured state and offer retry guidance. Mutations are serialized to prevent lost concurrent writes.
+
+Original copies use a pending-reference journal before copying. Failed structured saves roll back the new original; if cleanup fails, saving is blocked and startup/recovery retries cleanup. A committed original is preserved even if clearing the journal fails. This journal contains only a local original reference, never decrypted purchase contents or keys. Future cloud providers must support rollback before this save flow enables them.
+
+A local duplicate warning compares normalized merchant, purchase date, currency and cent-rounded total before copying the original. Users may explicitly save anyway; matching totals on the same day are only a possible duplicate, not proof.
+
+Data-management tests run with `node --test tests/*.test.cjs` and mock native storage, encryption and sharing boundaries. Actual share-sheet behavior, device storage exhaustion, secure-key deletion and Android/iOS file deletion still require device testing.

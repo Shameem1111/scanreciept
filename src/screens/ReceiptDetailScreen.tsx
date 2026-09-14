@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SecondaryButton, SectionTitle } from '../components/Ui';
 import { ReceiptReview } from '../components/ReceiptReview';
 import { createReviewDraft, ReviewDraft } from '../services/receiptReview';
@@ -8,7 +8,7 @@ import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
 
 export function ReceiptDetailScreen({ receiptId, onBack, backLabel = 'Back to purchases' }: { receiptId: string; onBack: () => void; backLabel?: string }) {
-  const { receipts, updateReceipt } = useReceiptStore();
+  const { receipts, updateReceipt, deleteReceipt } = useReceiptStore();
   const receipt = receipts.find(value => value.id === receiptId);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [draft, setDraft] = useState<ReviewDraft | null>(null);
@@ -40,7 +40,7 @@ export function ReceiptDetailScreen({ receiptId, onBack, backLabel = 'Back to pu
     if (!draft || busy) return;
     setBusy(true); setError('');
     try { await updateReceipt(receiptId, draft); setDraft(null); }
-    catch { setError('Could not save changes. Your previous receipt is preserved. Please try again.'); }
+    catch { setError('Could not save changes. Your previous receipt is preserved. Free device storage, unlock the device and try again.'); }
     finally { setBusy(false); }
   }
 
@@ -61,6 +61,14 @@ export function ReceiptDetailScreen({ receiptId, onBack, backLabel = 'Back to pu
           {available === null && <Text style={styles.text}>Checking original receipt…</Text>}
           {available === false && <Text accessibilityRole="alert" style={styles.text}>Original receipt unavailable</Text>}
           <PrimaryButton label="View original receipt" onPress={viewOriginal} disabled={busy || available === null} />
+          <SecondaryButton label="Delete receipt" disabled={busy} onPress={() => Alert.alert('Delete this receipt from history?', 'This removes the structured receipt and its items. The original file stays in its storage location. Google Drive/iCloud originals require separate deletion. Use Settings to delete all ReceiptMind data from this device.', [
+            { text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => {
+              setBusy(true); setError('');
+              try { await deleteReceipt(receiptId); onBack(); }
+              catch { setError('Could not delete receipt. Your previous history is preserved. Free storage and retry.'); }
+              finally { setBusy(false); }
+            } },
+          ])} />
           <SecondaryButton label="Edit receipt" disabled={busy} onPress={() => { setDraft(createReviewDraft(receipt)); setError(''); }} />
         </View>
         <SectionTitle>Extracted items</SectionTitle>

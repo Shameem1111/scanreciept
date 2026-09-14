@@ -40,17 +40,25 @@ export async function setEncryptedJson(key: string, value: unknown): Promise<voi
 
 export async function getEncryptedJson<T>(key: string): Promise<T | null> {
   const stored = await AsyncStorage.getItem(key);
-  if (!stored) return null;
+  if (stored === null) return null;
 
   try {
-    const encryptionKey = await getKey();
+    if (!/^(?:[0-9a-fA-F]{2})+$/.test(stored)) throw new Error();
+    const existing = await SecureStore.getItemAsync(KEY_NAME);
+    if (!existing) throw new Error();
+    const encryptionKey = await AESEncryptionKey.import(existing, 'hex');
     const sealed = AESSealedData.fromCombined(hexToBytes(stored));
     const decrypted = await aesDecryptAsync(sealed, encryptionKey, { output: 'bytes' });
-    if (typeof decrypted === 'string') return JSON.parse(decrypted) as T;
-    return JSON.parse(new TextDecoder().decode(decrypted)) as T;
+    const parsed: unknown = JSON.parse(typeof decrypted === 'string' ? decrypted : new TextDecoder().decode(decrypted));
+    if (parsed === null) throw new Error();
+    return parsed as T;
   } catch {
-    return null;
+    throw new Error('Local history is corrupted or cannot be decrypted. Retry when the device is unlocked, or reset history in Settings. Existing data has not been replaced.');
   }
+}
+
+export async function deleteEncryptionKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(KEY_NAME);
 }
 
 export async function removeEncryptedJson(key: string): Promise<void> {

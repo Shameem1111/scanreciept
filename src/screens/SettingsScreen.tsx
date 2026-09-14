@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SectionTitle } from '../components/Ui';
 import { storageProviders } from '../services/storage';
@@ -13,13 +13,29 @@ const options: { id: StorageProviderId; title: string; subtitle: string }[] = [
 ];
 
 export function SettingsScreen() {
-  const { storageProvider, setStorageProvider, clearAll, receipts } = useReceiptStore();
+  const { storageProvider, setStorageProvider, deleteHistory, deleteEverything, exportPurchaseHistory, receipts, recovery, hydrate, hydrated } = useReceiptStore();
+  const [busy, setBusy] = useState(false);
+  async function run(action: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    try { await action(); }
+    catch { Alert.alert('Action could not finish', 'Free device storage, unlock the device and retry. If deletion was interrupted, retry the same deletion action to finish.'); }
+    finally { setBusy(false); }
+  }
+  function confirmDelete(everything: boolean) {
+    Alert.alert(everything ? 'Delete everything from this device?' : 'Delete purchase history only?',
+      everything ? 'Permanently removes structured history, all ReceiptMind local originals, temporary exports, settings and the encryption key. Google Drive/iCloud originals and copies you exported elsewhere require separate deletion.' :
+        'Permanently removes all structured purchase records. All original files and the encryption key stay on this device. Google Drive/iCloud originals stay in your account.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => { void run(everything ? deleteEverything : deleteHistory); } },
+    ]);
+  }
 
   async function choose(id: StorageProviderId) {
     if (id === 'icloud' && Platform.OS !== 'ios') {
       return Alert.alert('iCloud is for Apple devices', 'Choose This device or Google Drive on Android.');
     }
-    await setStorageProvider(id);
+    await run(() => setStorageProvider(id));
   }
 
   return (
@@ -27,13 +43,17 @@ export function SettingsScreen() {
       <Text style={styles.title}>Privacy & storage</Text>
       <Text style={styles.subtitle}>Receipt originals stay where you choose. ReceiptMind never needs card or bank information.</Text>
 
+      {recovery && <Card>
+        <Text accessibilityRole="alert" style={styles.blocked}>{recovery}</Text>
+        <PrimaryButton label="Retry recovery" disabled={busy || !hydrated} onPress={() => { void run(hydrate); }} />
+      </Card>}
       <SectionTitle>Original receipt storage</SectionTitle>
       <View style={{ gap: 10 }}>
         {options.map((option) => {
           const selected = storageProvider === option.id;
           const ready = storageProviders[option.id].isConfigured();
           return (
-            <Pressable key={option.id} onPress={() => choose(option.id)} style={[styles.option, selected && styles.optionSelected]}>
+            <Pressable disabled={busy || !hydrated || !!recovery} key={option.id} onPress={() => choose(option.id)} style={[styles.option, selected && styles.optionSelected]}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.optionTitle}>{option.title} {selected ? '✓' : ''}</Text>
                 <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
@@ -58,12 +78,18 @@ export function SettingsScreen() {
       <View style={{ height: 24 }} />
       <SectionTitle>My data</SectionTitle>
       <Card>
-        <Text style={styles.note}>{receipts.length} structured receipt records are currently stored in the local app database.</Text>
-        <View style={{ height: 12 }} />
-        <PrimaryButton label="Delete local purchase history" onPress={() => Alert.alert('Delete local history?', 'This removes structured purchase history from this app. It does not delete originals stored outside the app.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: () => clearAll() },
+        {recovery ? <Text style={styles.note}>History is unavailable until recovery finishes.</Text> :
+          <Text style={styles.note}>{receipts.length} structured receipt records are stored locally with encryption.</Text>}
+        <Text style={styles.note}>JSON export contains readable purchase details and original references, but no original files or encryption key. Anyone with the exported copy can read it. Choose a trusted destination; exported copies require separate deletion.</Text>
+        <PrimaryButton label="Export purchase history as JSON" disabled={busy || !hydrated || !!recovery} onPress={() => Alert.alert('Export readable purchase history?', 'The exported JSON is not encrypted. Choose where to share or save it.', [
+          { text: 'Cancel', style: 'cancel' }, { text: 'Export', onPress: () => { void run(exportPurchaseHistory); } },
         ])} />
+        <View style={{ height: 12 }} />
+        <PrimaryButton label="Delete purchase history only" disabled={busy || !hydrated} onPress={() => confirmDelete(false)} />
+        <Text style={styles.note}>History-only deletion keeps all original files and the encryption key. To remove those too, use the separate device deletion action.</Text>
+        <View style={{ height: 12 }} />
+        <PrimaryButton label="Delete everything from this device" disabled={busy || !hydrated} onPress={() => confirmDelete(true)} />
+        <Text style={styles.note}>Google Drive and iCloud originals require separate deletion in those services unless their provider supports deletion. This build does not support external original deletion. Files you imported from outside ReceiptMind and exported copies also remain at their source.</Text>
       </Card>
       <View style={{ height: 40 }} />
     </ScrollView>

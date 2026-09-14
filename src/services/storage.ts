@@ -16,12 +16,26 @@ export interface ReceiptStorageProvider {
   isAvailable(reference?: string): Promise<boolean>;
   openReceipt(reference: string): Promise<void>;
   save(asset: ReceiptAsset, receiptId: string): Promise<StorageSaveResult>;
+  deleteReceipt?(reference: string): Promise<void>;
+  deleteAll?(): Promise<void>;
 }
 
 const localProvider: ReceiptStorageProvider = {
   id: 'local',
   label: 'This device',
   isConfigured: () => true,
+  async deleteReceipt(reference) {
+    const file = localFile(reference);
+    if (!file) throw new Error('Invalid original receipt reference.');
+    if (file.exists) file.delete();
+  },
+  async deleteAll() {
+    const directory = new Directory(Paths.document, 'ReceiptMind', 'Receipts');
+    if (directory.exists) directory.delete();
+    // Picker/camera imports can leave original copies in this app's cache.
+    const cache = new Directory(Paths.cache);
+    if (cache.exists) for (const entry of cache.list()) entry.delete();
+  },
   async isAvailable(reference) {
     try {
       if (Platform.OS !== 'android' && Platform.OS !== 'ios') return false;
@@ -47,7 +61,12 @@ const localProvider: ReceiptStorageProvider = {
     const safeName = asset.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const destination = new File(directory, `${receiptId}-${safeName}`);
     const source = new File(asset.uri);
-    await source.copy(destination, { overwrite: true });
+    try { await source.copy(destination, { overwrite: false }); }
+    catch {
+      try { if (destination.exists) destination.delete(); }
+      catch { throw new Error('Save failed and an incomplete original could not be removed. Use Delete everything from this device in Settings to clean up.'); }
+      throw new Error('Could not store the original. Free device storage and try again.');
+    }
     return { provider: 'local', reference: destination.uri };
   },
 };
@@ -70,6 +89,11 @@ export const storageProviders: Record<StorageProviderId, ReceiptStorageProvider>
   'google-drive': unconfiguredProvider('google-drive', 'Google Drive'),
   icloud: unconfiguredProvider('icloud', 'iCloud Drive'),
 };
+
+export function plannedLocalReference(asset: ReceiptAsset, receiptId: string): string {
+  const safeName = asset.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  return new File(new Directory(Paths.document, 'ReceiptMind', 'Receipts'), `${receiptId}-${safeName}`).uri;
+}
 
 // Accept only originals inside the app's receipt directory, never arbitrary local files.
 // Rebase legacy absolute references when iOS changes the application container path.
