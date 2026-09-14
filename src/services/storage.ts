@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { startActivityAsync } from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 import { ReceiptAsset, StorageProviderId } from '../types';
+import { googleDriveProvider } from './googleDrive';
 
 export type StorageSaveResult = {
   provider: StorageProviderId;
@@ -12,10 +13,16 @@ export type StorageSaveResult = {
 export interface ReceiptStorageProvider {
   id: StorageProviderId;
   label: string;
+  description?: string;
+  connect?(): Promise<void>;
+  disconnect?(): Promise<void>;
+  forgetConnection?(): Promise<void>;
+  connectionStatus?(): Promise<string>;
+  prepareSave?(asset: ReceiptAsset, receiptId: string): Promise<string>;
   isConfigured(): boolean;
   isAvailable(reference?: string): Promise<boolean>;
   openReceipt(reference: string): Promise<void>;
-  save(asset: ReceiptAsset, receiptId: string): Promise<StorageSaveResult>;
+  save(asset: ReceiptAsset, receiptId: string, preparedReference?: string): Promise<StorageSaveResult>;
   deleteReceipt?(reference: string): Promise<void>;
   deleteAll?(): Promise<void>;
 }
@@ -86,7 +93,7 @@ function unconfiguredProvider(id: Exclude<StorageProviderId, 'local'>, label: st
 
 export const storageProviders: Record<StorageProviderId, ReceiptStorageProvider> = {
   local: localProvider,
-  'google-drive': unconfiguredProvider('google-drive', 'Google Drive'),
+  'google-drive': googleDriveProvider,
   icloud: unconfiguredProvider('icloud', 'iCloud Drive'),
 };
 
@@ -124,14 +131,16 @@ export async function isReceiptAvailable(receipt: OriginalReference): Promise<bo
 }
 
 export async function openReceipt(receipt: OriginalReference): Promise<void> {
-  if (!await isReceiptAvailable(receipt)) throw new Error('Original receipt unavailable');
-  await storageProviders[receipt.storageProvider].openReceipt(receipt.storageReference);
+  const provider = storageProviders[receipt.storageProvider];
+  if (!provider || !receipt.storageReference) throw new Error('Original receipt unavailable');
+  await provider.openReceipt(receipt.storageReference);
 }
 
 export async function saveReceiptAsset(
   providerId: StorageProviderId,
   asset: ReceiptAsset,
   receiptId: string,
+  preparedReference?: string,
 ): Promise<StorageSaveResult> {
-  return storageProviders[providerId].save(asset, receiptId);
+  return storageProviders[providerId].save(asset, receiptId, preparedReference);
 }

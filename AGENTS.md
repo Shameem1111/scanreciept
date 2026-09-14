@@ -41,7 +41,7 @@ Do not redesign unrelated areas when implementing a focused task.
 - `expo-file-system` — local original receipt storage
 - `expo-crypto` — AES-GCM encryption
 - `expo-secure-store` — encryption key storage
-- AsyncStorage currently stores only the encrypted purchase-history blob
+- AsyncStorage stores encrypted purchase history plus non-content settings and pending-operation markers/references; never OAuth tokens
 
 Primary source folders:
 
@@ -118,7 +118,7 @@ Supported storage model:
 - Google Drive
 - iCloud Drive
 
-Local is currently implemented. Google Drive and iCloud providers must remain behind the storage-provider abstraction.
+Local and Google Drive providers are implemented. Google Drive requires public mobile OAuth configuration and a native build. Google Drive and iCloud providers must remain behind the storage-provider abstraction.
 
 Do not silently upload original receipt files to ReceiptMind-owned cloud storage.
 

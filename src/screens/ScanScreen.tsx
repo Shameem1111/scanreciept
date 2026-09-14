@@ -9,6 +9,7 @@ import { demoReceipt } from '../data';
 import { extractReceipt } from '../services/receiptAi';
 import { storageProviders } from '../services/storage';
 import { useReceiptStore } from '../store/ReceiptStore';
+import { storageErrorMessage } from '../services/storageErrors';
 import { hasDuplicate } from '../services/historyData';
 import { colors } from '../theme';
 import { ReceiptAsset } from '../types';
@@ -89,7 +90,7 @@ export function ScanScreen() {
       setExtracted(null);
       Alert.alert('Receipt saved', 'Purchase items are now searchable. Payment/card/bank details are never added to the purchase database.');
     } catch (error) {
-      Alert.alert('Could not save receipt', 'Purchase history could not be saved. Free device storage, unlock the device and retry. Check Settings if recovery is required.');
+      Alert.alert('Could not save receipt', storageErrorMessage(error, 'Purchase history could not be saved. Free device storage, unlock the device and retry. Check Settings if recovery is required.'));
     } finally {
       setBusy(false);
     }

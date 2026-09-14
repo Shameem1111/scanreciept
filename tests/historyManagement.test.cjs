@@ -24,11 +24,11 @@ const original = () => ({ id: 'receipt-1', merchant: 'Shop', purchaseDate: '2026
   storageProvider: 'local', storageReference: 'file:///original.pdf', originalFilename: 'receipt.pdf', createdAt: '2026-09-13T00:00:00Z' });
 function harness(initial = [original()]) {
   const kv = new Map(); const files = new Set(['file:///original.pdf']); const calls = [];
-  const state = { stored: initial, failSave: false, failRemove: false, failCleanup: false, failCopy: false, failKey: false, readError: false, key: true };
+  const state = { stored: initial, failSave: false, failRemove: false, failCleanup: false, failCopy: false, failKey: false, readError: false, key: true, cloudConnected: true, failJournal: false };
   let id = 0;
   const load = loader({
     '@react-native-async-storage/async-storage': { default: {
-      getItem: async k => kv.get(k) ?? null, setItem: async (k,v) => { kv.set(k,v); }, removeItem: async k => { kv.delete(k); },
+      getItem: async k => kv.get(k) ?? null, setItem: async (k,v) => { if(state.failJournal && k.includes("original-pending")) throw Error("storage full"); kv.set(k,v); }, removeItem: async k => { kv.delete(k); },
     } },
     'expo-crypto': { randomUUID: () => String(++id) },
     './historyExport': { clearExportFiles: async () => calls.push('clear exports'), shareHistoryJson: async json => calls.push(JSON.parse(json)) },
@@ -40,10 +40,23 @@ function harness(initial = [original()]) {
     },
     './storage': {
       plannedLocalReference: (_,id) => 'file:///'+id,
-      saveReceiptAsset: async (provider, asset, id) => { files.add('file:///'+id); if(state.failCopy) throw Error('partial copy'); return { provider, reference: 'file:///'+id }; },
-      storageProviders: { local: {
+      saveReceiptAsset: async (provider, asset, id, planned) => {
+        if(provider === 'google-drive') {
+          assert.equal(JSON.parse(kv.get('@receiptmind/original-pending/v1')).reference, planned);
+          files.add(planned); if(state.failCopy) throw Error('upload response lost'); return {provider,reference:planned};
+        }
+        files.add('file:///'+id); if(state.failCopy) throw Error('partial copy'); return { provider, reference: 'file:///'+id };
+      },
+      storageProviders: { 'google-drive': {
+        isAvailable: async () => state.cloudConnected,
+        connect: async () => { state.cloudConnected=true; },
+        disconnect: async () => { state.cloudConnected=false; },
+        forgetConnection: async () => { state.cloudConnected=false; calls.push('forget cloud'); },
+        prepareSave: async (_,id) => 'gdrive://account/'+id,
+        deleteReceipt: async ref => { if(state.failCleanup || !state.cloudConnected) throw Error('cloud cleanup failed'); files.delete(ref); },
+      }, local: {
         deleteReceipt: async ref => { if(state.failCleanup) throw Error('cleanup failed'); files.delete(ref); },
-        deleteAll: async () => { if(state.failCleanup) throw Error('cleanup failed'); files.clear(); },
+        deleteAll: async () => { if(state.failCleanup) throw Error('cleanup failed'); for(const file of files)if(file.startsWith('file:'))files.delete(file); },
       } },
     },
   });
@@ -168,4 +181,51 @@ test('JSON sharing removes its plaintext temporary file on success, cancellation
     else await assert.rejects(service.shareHistoryJson('{}'));
     assert.equal(files.size,0);assert.equal(dirs.size,0);
   }
+});
+
+test('switching local/Drive affects only new saves and preserves historical references after disconnect',async()=>{
+  const h=harness();await h.manager.hydrate();await h.manager.setStorageProvider('google-drive');
+  await h.manager.saveReceipt({...original(),merchant:'Cloud shop'},asset);
+  const saved=h.manager.state.receipts[0];assert.equal(saved.storageProvider,'google-drive');assert.match(saved.storageReference,/^gdrive:\/\/account\//);
+  assert.equal(h.state.stored[0].storageReference,saved.storageReference);
+  await h.manager.setStorageProvider('local');assert.equal(h.manager.state.receipts[0].storageReference,saved.storageReference);
+  await h.manager.setStorageProvider('google-drive');await h.manager.disconnectStorage('google-drive');
+  assert.equal(h.manager.state.storageProvider,'local');assert.equal(h.manager.state.receipts.length,2);assert.ok(h.files.has(saved.storageReference));
+  await assert.rejects(h.manager.setStorageProvider('google-drive'),/Connect/);
+  await h.manager.connectStorage('google-drive');await h.manager.setStorageProvider('google-drive');
+});
+test('Drive save is journaled before upload, rollback handles lost responses and failed structured saves',async()=>{
+  for(const failure of ['failCopy','failSave']){
+    const h=harness();await h.manager.hydrate();await h.manager.setStorageProvider('google-drive');h.state[failure]=true;
+    await assert.rejects(h.manager.saveReceipt({...original(),merchant:'Cloud shop'},asset));
+    assert.equal(h.files.size,1);assert.equal(h.manager.state.receipts.length,1);assert.equal(h.kv.has('@receiptmind/original-pending/v1'),false);
+  }
+  const h=harness();await h.manager.hydrate();await h.manager.setStorageProvider('google-drive');h.state.failJournal=true;
+  await assert.rejects(h.manager.saveReceipt({...original(),merchant:'Cloud shop'},asset));assert.equal(h.files.size,1);
+});
+test('disconnected cloud cleanup stays journaled across hydration without hiding structured purchases',async()=>{
+  const h=harness();await h.manager.hydrate();await h.manager.setStorageProvider('google-drive');h.state.failSave=true;h.state.failCleanup=true;
+  await assert.rejects(h.manager.saveReceipt({...original(),merchant:'Cloud shop'},asset));
+  assert.ok(h.manager.state.storageWarning);assert.equal(h.manager.state.recovery,null);assert.equal(h.manager.state.receipts.length,1);
+  h.state.cloudConnected=false;h.state.failSave=false;await h.manager.hydrate();
+  assert.equal(h.manager.state.recovery,null);assert.ok(h.manager.state.storageWarning);assert.equal(h.manager.state.receipts.length,1);
+  assert.equal(JSON.parse(h.manager.exportJson()).receipts.length,1);
+  await assert.rejects(h.manager.saveReceipt({...original(),merchant:'Other'},asset));assert.equal(h.files.size,2);
+  h.state.failCleanup=false;await h.manager.connectStorage('google-drive');await h.manager.retryStorageCleanup();
+  assert.equal(h.files.size,1);assert.equal(h.manager.state.storageWarning,null);assert.equal(h.kv.has('@receiptmind/original-pending/v1'),false);
+});
+test('startup retains a committed Drive original and device deletion signs out without deleting cloud files',async()=>{
+  const cloud={...original(),id:'cloud',storageProvider:'google-drive',storageReference:'gdrive://account/cloud'};
+  const h=harness([original(),cloud]);h.files.add(cloud.storageReference);
+  h.kv.set('@receiptmind/original-pending/v1',JSON.stringify({provider:'google-drive',reference:cloud.storageReference}));
+  h.state.cloudConnected=false;await h.manager.hydrate();assert.equal(h.manager.state.receipts.length,2);assert.equal(h.manager.state.storageWarning,null);
+  await h.manager.deleteEverything();assert.equal(h.files.size,1);assert.ok(h.files.has(cloud.storageReference));assert.equal(h.state.key,false);assert.ok(h.calls.includes('forget cloud'));
+});
+
+test('deleting a committed receipt with a lingering journal preserves its original on recovery',async()=>{
+  const cloud={...original(),id:'cloud',storageProvider:'google-drive',storageReference:'gdrive://account/cloud'};
+  const h=harness([cloud]);h.files.add(cloud.storageReference);await h.manager.hydrate();
+  h.kv.set('@receiptmind/original-pending/v1',JSON.stringify({provider:'google-drive',reference:cloud.storageReference}));
+  await h.manager.deleteReceipt('cloud');await h.manager.hydrate();
+  assert.equal(h.manager.state.receipts.length,0);assert.ok(h.files.has(cloud.storageReference));
 });

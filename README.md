@@ -11,7 +11,7 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 - Original item text stays separate from corrections. Item prices are line totals (not unit prices); their sum is calculated in cents, with an explicit option to use it as the confirmed total. The extracted printed total remains separately visible and stored.
 - Edited purchase fields are validated and privacy-sanitized again before encrypted persistence.
 - Non-itemized receipts and card-payment slips use the printed merchant as one purchase item and the full amount, including cents, as its price. These entries use category Other and reduced confidence for review; payment credentials remain excluded.
-- Local receipt-original storage in the app's Documents directory.
+- Local receipt-original storage in the app's Documents directory, or direct upload to the user's Google Drive after explicit connection and selection (requires OAuth configuration and a native build).
 - Tap a purchase to see its receipt, extracted item text, categories and original storage provider. Edit saved purchase details without changing the original reference or re-running extraction.
 - View original images/PDFs through the Android file viewer or iOS system preview/open sheet. Missing or disconnected originals show "Original receipt unavailable"; structured history remains available and editable.
 - AES-GCM encrypted local structured purchase history with search, dashboard and constrained English/German purchase queries.
@@ -40,7 +40,7 @@ npm install
 npx expo start
 ```
 
-Then scan the QR code with Expo Go on Android/iOS, or press `a` / `i` when an emulator/simulator is available.
+Local receipt features can run in Expo Go. Google Drive requires a native development or release build; see the Google Drive setup below.
 
 Keep dependencies aligned with the installed Expo SDK using `npx expo install --fix`, then run `npx expo-doctor`. React Native 0.86.3 includes Hermes `250829098.0.17`, replacing the affected `250829098.0.14` runtime. SDK 57 uses the New Architecture without the removed `newArchEnabled` configuration field. Rebuild existing native app binaries after updating these dependencies.
 
@@ -125,9 +125,39 @@ The storage-provider interface includes `isAvailable(reference?)` and `openRecei
 
 Receipt updates pass through the existing review validation/payment filter and encrypted store. Original availability is never used to prune structured history, and a failed encrypted write leaves the previous record intact.
 
-### Google Drive — adapter placeholder
+### Google Drive ? implemented; external OAuth setup required
 
-Automatic Google Drive upload needs Google OAuth client IDs and Drive `drive.file` authorization. It is deliberately not faked in this commit. Add a provider implementation in `src/services/storage.ts` once OAuth is configured.
+The provider uses the native `@react-native-google-signin/google-signin` SDK and Drive v3 directly. Its only requested Drive permission is `https://www.googleapis.com/auth/drive.file`: files created by this app or explicitly granted by the user. It never lists the user's whole Drive or requests `drive`/`drive.readonly`. The native SDK also requests its standard sign-in profile scopes; ReceiptMind does not persist the profile, email or ID token. See [Google's scope guide](https://developers.google.com/workspace/drive/api/guides/api-specific-auth).
+
+In **Settings > Original receipt storage**, choose **Connect / reconnect Google Drive**, complete consent, then select **Google Drive** for future saves. Originals upload to that account's My Drive with generated filenames. No shared folder, public sharing permission, service account or ReceiptMind-owned storage is involved. Originals can contain payment information and Google may index their contents; the structured purchase database still goes through the privacy filter and stays encrypted on the device.
+
+The encrypted receipt reference is `gdrive://<opaque-account-id>/<file-id>`. It contains no token. The account ID prevents accidentally using another account's credentials for an old original. Switching providers or disconnecting never rewrites old references. Reconnect the original account to regain access. Opening validates access/trash status through the API and launches a fixed Google Drive viewer URL without a token; the browser/Drive app may require the same account. Missing files, wrong accounts and revoked permission leave structured history intact.
+
+Token renewal stays in Google's native SDK. A Drive 401 invalidates the cached Android token and retries once; the iOS SDK refreshes expired tokens through `getTokens`. Persistent failures ask the user to reconnect. OAuth access/refresh tokens are never written to AsyncStorage, purchase records, logs, URLs or the extraction backend. See the library's [token and sign-out APIs](https://react-native-google-signin.github.io/docs/original).
+
+**Disconnect** attempts to revoke Google authorization and always attempts native sign-out, preserving all originals and history. If revocation fails offline, the app reports that local sign-out completed and tells the user to revoke ReceiptMind from Google Account connections. Device deletion signs out locally without deleting remote files. New saves use local storage when the selected provider is disconnected through Settings.
+
+#### Google Console steps (required outside this repository)
+
+No working OAuth credentials have been supplied or committed. Create the following in your own Google Cloud project:
+
+1. Enable **Google Drive API** in APIs & Services. Configure Google Auth Platform branding, support contact, audience and consent. Add `drive.file` in Data Access. During testing, add the Google accounts you will use as test users. Complete Google's publishing/verification requirements for your audience before production. [Consent setup](https://developers.google.com/workspace/guides/configure-oauth-consent)
+2. **Android:** create an OAuth client of application type **Android**, package `com.shameem.receiptmind`, with the SHA-1 of the certificate actually signing the installed app. Register separate clients for debug, EAS/release and Google Play app-signing certificates as needed; an upload-key fingerprint alone is insufficient for Play-signed installs. Get local fingerprints with `gradlew signingReport` in the generated Android project, or use EAS credentials / Play Console App integrity for those builds. Put that build's public Android client ID in `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`. This is a setup gate: the native Android SDK identifies the registered OAuth client using package + signing certificate, so it does **not** accept an `androidClientId` configure parameter. [Android registration details](https://react-native-google-signin.github.io/docs/setting-up/get-config-file)
+3. **iOS:** create an OAuth client of application type **iOS** with bundle ID `com.shameem.receiptmind`. Set its public client ID as `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`. `app.config.ts` derives the reversed client ID and configures the native URL scheme through the library's Expo plugin. Verify it matches the iOS URL scheme displayed in Console. Rebuild if the client ID changes. [iOS URL scheme setup](https://react-native-google-signin.github.io/docs/setting-up/ios)
+4. Copy `.env.example` to an untracked `.env` and fill only the mobile public client IDs. Supply the same variables to native build environments. A client secret, web/server OAuth client, refresh-token backend, Firebase config or shared Drive folder is **not** required by this implementation. Do not create fake values to make the UI appear configured.
+5. Run `npm install`, then build with `npx expo run:android` or `npx expo run:ios` (macOS/Xcode required for iOS), or use a configured EAS development/release build. Google Play services must be available on Android. Do not test Drive sign-in in Expo Go: it does not contain the native SDK. Android needs no Firebase Gradle plugin; native module autolinking handles it. The Expo plugin is added when the real iOS client ID is supplied. [Expo native-build setup](https://react-native-google-signin.github.io/docs/setting-up/expo)
+
+`EXPO_PUBLIC_RECEIPT_AI_ENDPOINT` remains the public receipt-extraction Worker endpoint. A URL such as `https://drive.google.com/drive/folders/...` is a Drive UI link, **never a backend/API endpoint or an OAuth client ID**. Drive uploads use fixed Google API URLs inside the provider; they do not use that AI endpoint variable.
+
+#### Save safety and validation
+
+Drive file IDs are reserved before upload, then journaled before the resumable upload starts. This allows rollback after a failed structured write, a lost upload response or process termination. Cleanup only targets the reserved file, not unrelated Drive files. If disconnected/offline, the pending journal remains and **Retry original cleanup** is available after reconnecting. History and export remain usable, while new original saves wait for cleanup. A committed file is retained even if journal removal fails. See [reserved Drive IDs](https://developers.google.com/workspace/drive/api/guides/create-file) and [resumable upload protocol](https://developers.google.com/workspace/drive/api/guides/manage-uploads).
+
+History-only/device deletion intentionally retains external originals, including any remote upload whose cleanup could not finish; remove those directly in Drive. Receipt deletion removes only the structured record. The provider's delete capability is used for failed-save rollback, not mass deletion of your Drive.
+
+Tests mock Google SDK, HTTP and filesystem boundaries: narrow scopes, cancelled/denied consent, missing configuration, stable references, upload bytes, one-time 401 refresh, revoked access, 403/quota/network errors, wrong accounts, missing/trashed files, disconnect, provider switching, and persistence rollback/restart recovery. Run `node --test tests/*.test.cjs` and `npm run typecheck`.
+
+A real Android/iOS OAuth round trip cannot be verified without your Console registration, signing credentials and native builds. Before release, test sign-in/consent, image/PDF upload/open, token expiry, revocation in Google Account settings, reconnecting the original and a different account, offline rollback, Drive quota failure and local device deletion on both platforms. This package's open-source Original Android sign-in API currently uses Google's deprecated-but-functional legacy SDK; migration to the newer Android authorization SDK is a future native dependency consideration. [Library platform notes](https://react-native-google-signin.github.io/docs/original)
 
 ### iCloud Drive — capability scaffolded
 
@@ -144,7 +174,7 @@ Automatic Google Drive upload needs Google OAuth client IDs and Drive `drive.fil
 
 ## Production next steps
 
-1. Configure Google OAuth + Drive `drive.file` provider.
+1. Complete Google Console registration and validate the implemented Drive provider on signed Android/iOS builds.
 2. Configure Apple iCloud container/signing and implement provider.
 3. Deploy the included Cloudflare Worker, configure its secret, and add production authentication/rate limiting.
 4. For larger datasets, migrate the encrypted blob store to SQLCipher/local SQLite while preserving the same encryption/privacy model.
@@ -157,13 +187,13 @@ Settings offers a versioned JSON export of structured purchase history (includin
 
 - **Delete receipt** in receipt details removes that receipt and its structured items, retaining its original file.
 - **Delete purchase history only** removes the encrypted history; all originals and the device encryption key remain.
-- **Delete everything from this device** removes encrypted history, all originals in ReceiptMind's local receipt directory (including ones retained after history-only deletion), app cache including picker/camera copies and temporary exports, settings and the SecureStore encryption key. A durable reset marker blocks normal use until an interrupted deletion is completed.
+- **Delete everything from this device** removes encrypted history, all originals in ReceiptMind's local receipt directory (including ones retained after history-only deletion), app cache including picker/camera copies and temporary exports, settings, native provider sessions and the SecureStore encryption key. A durable reset marker blocks normal use until an interrupted deletion is completed.
 
-Google Drive/iCloud originals require separate deletion through those services unless a provider implements deletion. This build does not support external original deletion. Imported source files outside the app and exported copies are not removed.
+Google Drive/iCloud originals require separate deletion through those services unless a provider implements deletion. The user-facing history/device deletion actions do not delete external originals; the Drive provider only deletes its reserved uploads during failed-save rollback. Imported source files outside the app and exported copies are not removed.
 
 Unreadable ciphertext, missing keys and malformed structured history show a recovery screen instead of an empty purchase database. Retry after unlocking the device, or explicitly reset history. Writes and exports stay blocked during recovery; reading never generates a replacement key. Storage/save failures keep the previous structured state and offer retry guidance. Mutations are serialized to prevent lost concurrent writes.
 
-Original copies use a pending-reference journal before copying. Failed structured saves roll back the new original; if cleanup fails, saving is blocked and startup/recovery retries cleanup. A committed original is preserved even if clearing the journal fails. This journal contains only a local original reference, never decrypted purchase contents or keys. Future cloud providers must support rollback before this save flow enables them.
+Original copies use a pending-reference journal before copying. Failed structured saves roll back the new original; if cleanup fails, saving is blocked and startup/recovery retries cleanup. A committed original is preserved even if clearing the journal fails. The journal contains only an original reference and provider identifier, never decrypted purchase contents, tokens or keys. Drive reserves its reference before upload and retains pending cleanup across restarts; unavailable cloud cleanup does not hide structured history.
 
 A local duplicate warning compares normalized merchant, purchase date, currency and cent-rounded total before copying the original. Users may explicitly save anyway; matching totals on the same day are only a possible duplicate, not proof.
 

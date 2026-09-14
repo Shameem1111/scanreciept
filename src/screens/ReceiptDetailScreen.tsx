@@ -3,6 +3,7 @@ import { Alert, AppState, ScrollView, StyleSheet, Text, View } from 'react-nativ
 import { Card, PrimaryButton, SecondaryButton, SectionTitle } from '../components/Ui';
 import { ReceiptReview } from '../components/ReceiptReview';
 import { createReviewDraft, ReviewDraft } from '../services/receiptReview';
+import { storageErrorMessage } from '../services/storageErrors';
 import { isReceiptAvailable, openReceipt, storageProviders } from '../services/storage';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
@@ -30,9 +31,9 @@ export function ReceiptDetailScreen({ receiptId, onBack, backLabel = 'Back to pu
     if (!receipt || busy) return;
     setBusy(true); setError('');
     try { await openReceipt(receipt); setAvailable(true); }
-    catch {
+    catch (error) {
       setAvailable(await isReceiptAvailable(receipt));
-      setError('Original receipt unavailable. If the file is still on this device, try again with an image or PDF viewer installed.');
+      setError(storageErrorMessage(error, 'Original receipt unavailable. Check the file, connection and selected account, or install an image/PDF viewer. Structured history is kept.'));
     } finally { setBusy(false); }
   }
 

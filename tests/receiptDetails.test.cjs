@@ -37,6 +37,7 @@ function storage(os = 'android') {
     async copy(destination) { files.set(destination.uri, true); }
   }
   const service = loader({
+    './googleDrive': { googleDriveProvider: { isAvailable: async () => false, openReceipt: async () => { throw Error('Original receipt unavailable'); } } },
     'expo-file-system': { Directory, File, Paths: { document: 'file:///current/Documents', cache: 'file:///current/Cache' } },
     'react-native': { Platform: { OS: os } },
     'expo-intent-launcher': { startActivityAsync: async (...args) => { if (state.fail) throw Error('No viewer'); opened.push(args); } },
