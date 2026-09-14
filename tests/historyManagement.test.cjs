@@ -41,13 +41,18 @@ function harness(initial = [original()]) {
     './storage': {
       plannedLocalReference: (_,id) => 'file:///'+id,
       saveReceiptAsset: async (provider, asset, id, planned) => {
-        if(provider === 'google-drive') {
+        if(provider === 'google-drive' || provider === 'icloud') {
           assert.equal(JSON.parse(kv.get('@receiptmind/original-pending/v1')).reference, planned);
           files.add(planned); if(state.failCopy) throw Error('upload response lost'); return {provider,reference:planned};
         }
         files.add('file:///'+id); if(state.failCopy) throw Error('partial copy'); return { provider, reference: 'file:///'+id };
       },
-      storageProviders: { 'google-drive': {
+      storageProviders: { icloud: {
+        isAvailable: async () => state.cloudConnected,
+        connectionStatus: async () => 'Enable iCloud Drive in iPhone Settings.',
+        prepareSave: async (_,id) => 'icloud://container/account/'+id,
+        deleteReceipt: async ref => { if(state.failCleanup || !state.cloudConnected) throw Error('cloud cleanup failed'); files.delete(ref); },
+      }, 'google-drive': {
         isAvailable: async () => state.cloudConnected,
         connect: async () => { state.cloudConnected=true; },
         disconnect: async () => { state.cloudConnected=false; },
@@ -228,4 +233,23 @@ test('deleting a committed receipt with a lingering journal preserves its origin
   h.kv.set('@receiptmind/original-pending/v1',JSON.stringify({provider:'google-drive',reference:cloud.storageReference}));
   await h.manager.deleteReceipt('cloud');await h.manager.hydrate();
   assert.equal(h.manager.state.receipts.length,0);assert.ok(h.files.has(cloud.storageReference));
+});
+
+test('iCloud switching, journaled rollback and restart recovery preserve encrypted history', async () => {
+  const h=harness([{...original(),id:'existing'}]); await h.manager.hydrate(); await h.manager.setStorageProvider('icloud');
+  const data={...original(),merchant:'New shop'};
+  await h.manager.saveReceipt(data,asset,true);
+  const saved=h.manager.state.receipts[0]; assert.equal(saved.storageProvider,'icloud');
+  assert.ok(saved.storageReference.startsWith('icloud://')); assert.ok(h.files.has(saved.storageReference));
+  await h.manager.setStorageProvider('local'); assert.equal(h.manager.state.receipts[0].storageReference,saved.storageReference);
+  await h.manager.setStorageProvider('icloud'); h.state.failSave=true; h.state.failCleanup=true;
+  await assert.rejects(h.manager.saveReceipt(data,asset,true));
+  assert.equal(h.manager.state.receipts.length,2); assert.ok(h.kv.has('@receiptmind/original-pending/v1'));
+  h.state.failSave=false; h.state.cloudConnected=false; await h.manager.hydrate();
+  assert.equal(h.manager.state.recovery,null); assert.equal(h.manager.state.receipts.length,2);
+  assert.equal(h.manager.exportJson().includes(saved.storageReference),true);
+  await assert.rejects(h.manager.setStorageProvider('icloud'),/iPhone Settings/);
+  h.state.cloudConnected=true; h.state.failCleanup=false; await h.manager.retryStorageCleanup();
+  assert.equal(h.kv.has('@receiptmind/original-pending/v1'),false); assert.ok(h.files.has(saved.storageReference));
+  await h.manager.deleteHistory(); assert.ok(h.files.has(saved.storageReference));
 });

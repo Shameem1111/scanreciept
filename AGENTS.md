@@ -118,7 +118,7 @@ Supported storage model:
 - Google Drive
 - iCloud Drive
 
-Local and Google Drive providers are implemented. Google Drive requires public mobile OAuth configuration and a native build. Google Drive and iCloud providers must remain behind the storage-provider abstraction.
+Local and Google Drive providers are implemented. The iCloud provider and app-local Swift bridge are implemented but require signed physical iPhone validation. Google Drive requires public mobile OAuth configuration and a native build; iCloud requires Apple container entitlements and signing. Both cloud providers must remain behind the storage-provider abstraction.
 
 Do not silently upload original receipt files to ReceiptMind-owned cloud storage.
 

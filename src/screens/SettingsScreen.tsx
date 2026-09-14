@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SectionTitle } from '../components/Ui';
 import { storageErrorMessage } from '../services/storageErrors';
 import { storageProviders } from '../services/storage';
@@ -10,7 +10,7 @@ import { StorageProviderId } from '../types';
 const options: { id: StorageProviderId; title: string; subtitle: string }[] = [
   { id: 'local', title: '📱 This device', subtitle: 'Working now. Originals stay in ReceiptMind local files.' },
   { id: 'google-drive', title: '🔵 Google Drive', subtitle: 'Connect your Google account to store originals in your own Drive.' },
-  { id: 'icloud', title: '☁️ iCloud Drive', subtitle: 'iOS capability is declared; Apple signing/container setup is required.' },
+  { id: 'icloud', title: '☁️ iCloud Drive', subtitle: 'Store originals in your own iCloud Drive on iPhone.' },
 ];
 
 export function SettingsScreen() {
@@ -46,9 +46,6 @@ export function SettingsScreen() {
   }
 
   async function choose(id: StorageProviderId) {
-    if (id === 'icloud' && Platform.OS !== 'ios') {
-      return Alert.alert('iCloud is for Apple devices', 'Choose This device or Google Drive on Android.');
-    }
     await run(() => setStorageProvider(id));
   }
 
@@ -78,10 +75,10 @@ export function SettingsScreen() {
                 <Text style={styles.optionTitle}>{option.title} {selected ? '✓' : ''}</Text>
                 <Text style={styles.optionSubtitle}>{provider.description ?? option.subtitle}</Text>
               </View>
-              <Text style={[styles.status, ready ? styles.ready : styles.setup]}>{ready ? (provider.connect ? 'Configured' : 'Ready') : 'Setup'}</Text>
+              <Text style={[styles.status, ready ? styles.ready : styles.setup]}>{ready ? (provider.connectionStatus ? 'Configured' : 'Ready') : 'Setup'}</Text>
             </Pressable>
+            {provider.connectionStatus && <Text accessibilityLiveRegion="polite" style={styles.note}>{connections[option.id] ?? 'Checking connection...'}</Text>}
             {provider.connect && <>
-              <Text accessibilityLiveRegion="polite" style={styles.note}>{connections[option.id] ?? 'Checking connection...'}</Text>
               <PrimaryButton label={`Connect / reconnect ${provider.label}`} disabled={busy || !hydrated} onPress={() => Alert.alert(`Connect ${provider.label}?`, 'Original receipts will upload to your account only after you select this storage option and save a receipt. Originals may contain payment information. Existing receipt references will stay unchanged.', [
                 { text: 'Cancel', style: 'cancel' }, { text: 'Connect', onPress: () => { void run(() => connectStorage(option.id)); } },
               ])} />

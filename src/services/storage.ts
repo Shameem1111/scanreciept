@@ -4,6 +4,7 @@ import { startActivityAsync } from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 import { ReceiptAsset, StorageProviderId } from '../types';
 import { googleDriveProvider } from './googleDrive';
+import { icloudProvider } from './icloud';
 
 export type StorageSaveResult = {
   provider: StorageProviderId;
@@ -14,6 +15,7 @@ export interface ReceiptStorageProvider {
   id: StorageProviderId;
   label: string;
   description?: string;
+  cleanupTemporaryFiles?(): Promise<void>;
   connect?(): Promise<void>;
   disconnect?(): Promise<void>;
   forgetConnection?(): Promise<void>;
@@ -78,23 +80,10 @@ const localProvider: ReceiptStorageProvider = {
   },
 };
 
-function unconfiguredProvider(id: Exclude<StorageProviderId, 'local'>, label: string): ReceiptStorageProvider {
-  return {
-    id,
-    label,
-    isConfigured: () => false,
-    isAvailable: async () => false,
-    async openReceipt() { throw new Error('Original receipt unavailable'); },
-    async save() {
-      throw new Error(`${label} is not configured in this build yet.`);
-    },
-  };
-}
-
 export const storageProviders: Record<StorageProviderId, ReceiptStorageProvider> = {
   local: localProvider,
   'google-drive': googleDriveProvider,
-  icloud: unconfiguredProvider('icloud', 'iCloud Drive'),
+  icloud: icloudProvider,
 };
 
 export function plannedLocalReference(asset: ReceiptAsset, receiptId: string): string {

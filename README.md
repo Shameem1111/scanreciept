@@ -40,7 +40,7 @@ npm install
 npx expo start
 ```
 
-Local receipt features can run in Expo Go. Google Drive requires a native development or release build; see the Google Drive setup below.
+Local receipt features can run in Expo Go. Google Drive and iCloud require a native development or release build; see the Google Drive setup below.
 
 Keep dependencies aligned with the installed Expo SDK using `npx expo install --fix`, then run `npx expo-doctor`. React Native 0.86.3 includes Hermes `250829098.0.17`, replacing the affected `250829098.0.14` runtime. SDK 57 uses the New Architecture without the removed `newArchEnabled` configuration field. Rebuild existing native app binaries after updating these dependencies.
 
@@ -159,9 +159,30 @@ Tests mock Google SDK, HTTP and filesystem boundaries: narrow scopes, cancelled/
 
 A real Android/iOS OAuth round trip cannot be verified without your Console registration, signing credentials and native builds. Before release, test sign-in/consent, image/PDF upload/open, token expiry, revocation in Google Account settings, reconnecting the original and a different account, offline rollback, Drive quota failure and local device deletion on both platforms. This package's open-source Original Android sign-in API currently uses Google's deprecated-but-functional legacy SDK; migration to the newer Android authorization SDK is a future native dependency consideration. [Library platform notes](https://react-native-google-signin.github.io/docs/original)
 
-### iCloud Drive — capability scaffolded
+### iCloud Drive ? implemented; signed iPhone validation required
 
-`app.json` declares `ios.usesIcloudStorage` and configures `expo-document-picker`. Final automatic iCloud Drive writing requires Apple Developer signing/container configuration. Until then the provider remains marked Setup in the UI.
+The provider in `src/services/icloud.ts` uses the app-local Expo module in `modules/receiptmind-icloud`. Apple account/container resolution and coordinated file operations are isolated there. Android/web never load the Apple module and explain that iCloud requires iOS. Expo Go has no bridge; rebuild a native client. Settings reports sign-out, unavailable container and native-build setup separately. Sign-in and disabling iCloud are managed in iPhone Settings; the app does not sign the user out of their device-wide Apple Account.
+
+Select iCloud Drive explicitly for future originals. Files are copied into the user's app container at `Documents/Receipts/<uuid>.<extension>`, visible under ReceiptMind in Files/iCloud Drive. Names contain no merchant or input filename. Saving means the coordinated local iCloud document write succeeded; Apple's asynchronous upload may still be pending (offline, quota or service failure). It is not confirmation of remote backup. Availability checks account/container access and, for an original, ubiquitous file metadata; an evicted file can be available for download even when offline opening fails. Opening requests download, waits up to 30 seconds for downloaded content, copies a coordinated snapshot to app cache and presents the iOS open/share sheet. Retry after connectivity returns. Temporary previews are removed after the sheet and at successful next startup following an interruption.
+
+References use `icloud://<container>/<account-token-sha256>/<uuid>.<extension>`, never an absolute sandbox path or credential. The native bridge checks the current account on every operation, validates reference grammar/container and rejects traversal and symlinks. Account identity is a hash of Apple's archived opaque ubiquity identity token, not an email or authorization token. References remain unchanged across provider switches and sandbox relocation; they are purchase provenance, not a portable history-sync/restore mechanism. A different account, missing/moved/renamed file, download error or denied access leaves encrypted purchase history intact and editable. Return to the original account/path to restore access. Account-token changes can require re-linking outside this implementation; no account migration is provided.
+
+The existing pending-original journal records the reserved reference before copying. Failed copies or encrypted writes roll back only that unique original. If the account/container is unavailable during rollback, cleanup remains pending across restarts and Settings offers Retry original cleanup. History remains readable/exportable. History/device deletion keeps iCloud originals; delete those separately in Files. Structured purchase data continues through the same privacy sanitizer and AES-GCM/SecureStore persistence. No structured history is uploaded to iCloud by this provider.
+
+#### Apple Developer and signing setup (required)
+
+1. In Apple Developer Certificates, Identifiers & Profiles, use the explicit App ID `com.shameem.receiptmind` under your paid developer team. Enable iCloud with iCloud Documents and register/assign `iCloud.com.shameem.receiptmind` to that App ID. This public identifier is not a secret. If changing the bundle ID, update the `NSUbiquitousContainers` key in `app.json` too; the bridge and document-picker plugin derive the container as `iCloud.<bundleIdentifier>`. Existing references continue to require their original container, so changing it is not a storage migration.
+2. `ios.usesIcloudStorage` and the `expo-document-picker` config plugin generate `com.apple.developer.icloud-container-identifiers` and `com.apple.developer.ubiquity-container-identifiers` with that container, `com.apple.developer.icloud-services = [CloudDocuments]`, and `com.apple.developer.ubiquity-kvstore-identifier = $(TeamIdentifierPrefix)com.shameem.receiptmind`. The provider uses documents, not CloudKit or the key-value store. The plugin also emits the iCloud container environment. See [Expo document-picker configuration](https://docs.expo.dev/versions/latest/sdk/document-picker/).
+3. `ICLOUD_CONTAINER_ENVIRONMENT` is a non-secret build setting: defaults to `Production` for distribution; set `Development` when using a development profile that requires it. Match the entitlement to the actual provisioning profile. In Xcode select the correct Team, enable iCloud Documents and select the same container in Signing & Capabilities. Refresh/regenerate profiles after changing capabilities, including registered physical device UDIDs for development/Ad Hoc. EAS capability synchronization does not replace checking the container association and signed profile. App transfers may require the original team prefix via the document-picker plugin's `kvStoreIdentifier` option. See [Expo iOS capabilities](https://docs.expo.dev/build-reference/ios-capabilities/).
+4. `NSUbiquitousContainers` declares ReceiptMind's document scope visible in the user's iCloud Drive with supported folder levels. ?Public? document scope means visible to the user in Files, not anonymous internet sharing. See [Apple iCloud document configuration](https://developer.apple.com/library/archive/documentation/General/Conceptual/iCloudDesignGuide/Chapters/DesigningForDocumentsIniCloud.html). Increment the iOS build number if changing container display metadata on an already-installed build.
+5. Run `npm install`, `npx expo prebuild --platform ios` and `npx expo run:ios --device` on macOS/Xcode, or produce an appropriately signed EAS build. The local Expo module autolinks; confirm the ReceiptMindICloud pod is installed. Inspect the generated entitlements and the final signed app with `codesign -d --entitlements :- <app-path>`, and compare to the embedded provisioning profile. Native code and entitlement changes require a new binary, not an OTA update. See [Expo local native modules](https://docs.expo.dev/modules/get-started/).
+6. Keep Apple passwords, signing certificate private keys, App Store Connect keys and provisioning credentials in Xcode/EAS secure credential storage, never Git or `EXPO_PUBLIC_*`. No Apple private credentials are needed in JavaScript or the backend. Existing ignore rules exclude `.p8`, `.p12` and `.mobileprovision` files.
+
+#### Validation limits and physical-device checklist
+
+Automated tests mock the native iCloud boundary and exercise provider availability, prepare/save/open/delete errors, preview cleanup, Android exclusion, provider switching, encrypted-write rollback and restart recovery. Expo config introspection and Apple autolinking can run on Windows; they do not compile Swift or exercise iCloud. **No signed physical iPhone build was available for this change; real iCloud operation has not been tested.**
+
+Before release, compile/sign and install on a physical iPhone. Test PDF/image save and open; verify the original appears in Files and completes upload on another device using the same account; restart/update the app and reopen saved references; evict/download a file; delete, rename or move it; test offline reads, cloud/device quota, iCloud Drive disabled, sign-out and switching Apple Accounts; reconnect the original account; force an encrypted-write failure and interrupted cleanup; switch all three providers and confirm old references/history remain intact. Confirm temporary preview cleanup and test both development and distribution signing configurations. A simulator, mocked test or successful Metro bundle is not real iCloud validation.
 
 ## Privacy model
 
@@ -175,7 +196,7 @@ A real Android/iOS OAuth round trip cannot be verified without your Console regi
 ## Production next steps
 
 1. Complete Google Console registration and validate the implemented Drive provider on signed Android/iOS builds.
-2. Configure Apple iCloud container/signing and implement provider.
+2. Configure Apple iCloud container/signing and validate the implemented provider on a signed physical iPhone.
 3. Deploy the included Cloudflare Worker, configure its secret, and add production authentication/rate limiting.
 4. For larger datasets, migrate the encrypted blob store to SQLCipher/local SQLite while preserving the same encryption/privacy model.
 5. Add authentication, per-user RLS, subscription limits and cost metering.

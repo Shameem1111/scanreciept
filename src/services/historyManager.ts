@@ -65,6 +65,7 @@ export class HistoryManager {
         this.cleanupFailed(pending.provider);
       }
       await clearExportFiles();
+      for (const provider of Object.values(storageProviders)) await provider.cleanupTemporaryFiles?.();
       const settings = await AsyncStorage.getItem(SETTINGS_KEY);
       const provider = settings ? JSON.parse(settings).storageProvider : 'local';
       this.update({ receipts, storageProvider: ['local', 'google-drive', 'icloud'].includes(provider) ? provider : 'local', recovery: null });
@@ -150,7 +151,9 @@ export class HistoryManager {
   });
   setStorageProvider = (provider: StorageProviderId) => this.serial(async () => {
     this.ready();
-    if (provider !== 'local' && !await storageProviders[provider].isAvailable()) throw new StorageError('Connect the storage provider in Settings before selecting it. Existing receipts are unchanged.');
+    if (provider !== 'local' && !await storageProviders[provider].isAvailable()) {
+      throw new StorageError(await storageProviders[provider].connectionStatus?.() ?? 'Connect the storage provider in Settings before selecting it. Existing receipts are unchanged.');
+    }
     await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify({ storageProvider: provider }));
     this.update({ storageProvider: provider });
   });

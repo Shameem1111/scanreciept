@@ -12,7 +12,14 @@
       "usesIcloudStorage": true,
       "infoPlist": {
         "NSCameraUsageDescription": "ReceiptMind uses the camera only when you choose to scan a receipt.",
-        "NSPhotoLibraryUsageDescription": "ReceiptMind accesses your photo library only when you choose to upload a receipt."
+        "NSPhotoLibraryUsageDescription": "ReceiptMind accesses your photo library only when you choose to upload a receipt.",
+        "NSUbiquitousContainers": {
+          "iCloud.com.shameem.receiptmind": {
+            "NSUbiquitousContainerIsDocumentScopePublic": true,
+            "NSUbiquitousContainerName": "ReceiptMind",
+            "NSUbiquitousContainerSupportedFolderLevels": "Any"
+          }
+        }
       }
     },
     "android": {
