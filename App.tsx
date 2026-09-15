@@ -9,6 +9,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ReceiptStoreProvider, useReceiptStore } from './src/store/ReceiptStore';
 import { colors } from './src/theme';
 import { AppPrivacyGate } from './src/components/AppPrivacyGate';
+import { Category } from './src/types';
 
 type Tab = 'home' | 'scan' | 'purchases' | 'ask' | 'settings';
 
@@ -23,6 +24,7 @@ const tabs: { id: Tab; icon: string; label: string }[] = [
 function AppShell() {
   const { hydrated, recovery } = useReceiptStore();
   const [tab, setTab] = useState<Tab>('home');
+  const [purchaseCategory, setPurchaseCategory] = useState<Category | undefined>();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
@@ -34,7 +36,22 @@ function AppShell() {
     };
   }, []);
 
-  const screen = !hydrated ? <Text style={{ padding: 24 }}>Loading encrypted history...</Text> : recovery ? <SettingsScreen /> : tab === 'home' ? <HomeScreen /> : tab === 'scan' ? <ScanScreen /> : tab === 'purchases' ? <PurchasesScreen /> : tab === 'ask' ? <AskScreen /> : <SettingsScreen />;
+  const openCategory = (category: Category) => {
+    setPurchaseCategory(category);
+    setTab('purchases');
+  };
+
+  const selectTab = (next: Tab) => {
+    if (next === 'purchases') setPurchaseCategory(undefined);
+    setTab(next);
+  };
+
+  const screen = !hydrated ? <Text style={{ padding: 24 }}>Loading encrypted history...</Text>
+    : recovery ? <SettingsScreen />
+    : tab === 'home' ? <HomeScreen onCategoryPress={openCategory} />
+    : tab === 'scan' ? <ScanScreen />
+    : tab === 'purchases' ? <PurchasesScreen key={purchaseCategory ?? 'all'} initialCategory={purchaseCategory} />
+    : tab === 'ask' ? <AskScreen /> : <SettingsScreen />;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -44,7 +61,7 @@ function AppShell() {
         {tabs.map((item) => {
           const active = item.id === tab;
           return (
-            <Pressable key={item.id} onPress={() => setTab(item.id)} style={styles.tabButton}>
+            <Pressable key={item.id} onPress={() => selectTab(item.id)} style={styles.tabButton}>
               <Text style={[styles.tabIcon, active && styles.active]}>{item.icon}</Text>
               <Text style={[styles.tabLabel, active && styles.active]} numberOfLines={1}>{item.label}</Text>
             </Pressable>
