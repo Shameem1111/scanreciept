@@ -27,6 +27,13 @@ const extractionErrors: Record<string, string> = {
   INVALID_UPLOAD: 'Receipt upload was invalid. Select the file again and retry.',
 };
 
+export type ReceiptExtractionTiming = {
+  requestMs: number;
+  responseParseMs: number;
+  sanitizeMs: number;
+  totalMs: number;
+};
+
 class ReceiptUploadFile extends File {
   constructor(private readonly asset: ReceiptAsset) {
     super(asset.uri);
@@ -61,11 +68,15 @@ function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
   };
 }
 
-export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedReceipt> {
+export async function extractReceipt(asset: ReceiptAsset, onTiming?: (timing: ReceiptExtractionTiming) => void): Promise<ExtractedReceipt> {
   if (!/^https:\/\//i.test(endpoint)) {
     throw new Error('Receipt reading is not configured in this build. Configure the receipt extraction service and restart the app, then retry.');
   }
 
+  const totalStarted = Date.now();
+  let requestMs = 0;
+  let responseParseMs = 0;
+  let sanitizeMs = 0;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
@@ -74,6 +85,7 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
     form.append('receipt', receipt);
     form.append('privacy_mode', 'no-payment-data');
 
+    const requestStarted = Date.now();
     const response = await fetch(endpoint, {
       method: 'POST',
       body: form,
@@ -81,6 +93,7 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
       redirect: 'error',
       signal: controller.signal,
     });
+    requestMs = Date.now() - requestStarted;
 
     if (!response.ok) {
       const failure = await response.json().catch(() => null) as { code?: unknown } | null;
@@ -93,7 +106,9 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
       throw new Error(`Receipt extraction failed (${response.status})`);
     }
 
+    const parseStarted = Date.now();
     const result = (await response.json()) as ExtractedReceipt;
+    responseParseMs = Date.now() - parseStarted;
     if (!result || result.source === 'demo' || typeof result.merchant !== 'string' ||
         !Number.isFinite(result.total) || result.total < 0 || result.currency !== 'EUR' ||
         !Array.isArray(result.items) || result.items.some((item) => !item ||
@@ -101,7 +116,9 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
           typeof item.category !== 'string' || !Number.isFinite(item.price))) {
       throw new Error('The receipt service returned an invalid result. Please try again.');
     }
+    const sanitizeStarted = Date.now();
     const sanitized = sanitizeExtractedReceipt(result);
+    sanitizeMs = Date.now() - sanitizeStarted;
     if (sanitized.items.length === 0) {
       throw new Error('No purchase items could be read. Try a clearer photo of the full receipt.');
     }
@@ -111,5 +128,8 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
     throw error;
   } finally {
     clearTimeout(timeout);
+    const timing = { requestMs, responseParseMs, sanitizeMs, totalMs: Date.now() - totalStarted };
+    console.info('[ReceiptMind timing]', JSON.stringify(timing));
+    onTiming?.(timing);
   }
 }
