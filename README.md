@@ -7,8 +7,8 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 - App menus and encrypted local purchase history open without an account while the native Apple/Google app-login build is pending.
 - Native **Scan Receipt** flow using the device camera.
 - Native **Upload Receipt** flow for image/PDF files.
-- Temporary account-free mode opens scanned or uploaded receipts directly in the review form for manual entry and local saving. Automatic AI reading can be restored after a signed Apple/Google build is available.
-- Confirm and edit merchant, purchase date, total, item names, quantities, line prices and categories; add or remove items before saving.
+- Scanned and uploaded receipts run automatic extraction, then open a prefilled review form for corrections and extra items. Apple/Google sign-in is requested when needed. Failed reading keeps the selected original available for retry or explicit manual entry.
+- Confirm and edit shop/merchant, purchase date, optional printed time and sales receipt number (Kassenbon Nr.), total, item names, quantities, line prices and categories; add or remove items before saving. Missing times/numbers remain blank; payment identifiers are excluded.
 - Missing or ambiguous dates reach review and require a valid date before save. Low/unknown confidence is highlighted; the extractor provides item confidence only, so receipt fields are marked for confirmation.
 - Original item text stays separate from corrections. Item prices are line totals (not unit prices); their sum is calculated in cents, with an explicit option to use it as the confirmed total. The extracted printed total remains separately visible and stored.
 - Edited purchase fields are validated and privacy-sanitized again before encrypted persistence.
@@ -42,7 +42,7 @@ npm install
 npx expo start
 ```
 
-Automatic AI receipt reading is temporarily paused and still requires a native development or release build with Apple or Google sign-in; Expo Go does not contain the required provider modules. Google Drive and iCloud setup is described below.
+Automatic AI receipt reading requires a native development or release build with Apple or Google sign-in; Expo Go does not contain the required provider modules. If sign-in or reading fails, the scan screen shows the error with retry and manual-entry options. Google Drive and iCloud setup is described below.
 
 Keep dependencies aligned with the installed Expo SDK using `npx expo install --fix`, then run `npx expo-doctor`. React Native 0.86.3 includes Hermes `250829098.0.17`, replacing the affected `250829098.0.14` runtime. SDK 57 uses the New Architecture without the removed `newArchEnabled` configuration field. Rebuild existing native app binaries after updating these dependencies.
 
@@ -220,6 +220,6 @@ Unreadable ciphertext, missing keys and malformed structured history show a reco
 
 Original copies use a pending-reference journal before copying. Failed structured saves roll back the new original; if cleanup fails, saving is blocked and startup/recovery retries cleanup. A committed original is preserved even if clearing the journal fails. The journal contains only an original reference and provider identifier, never decrypted purchase contents, tokens or keys. Drive reserves its reference before upload and retains pending cleanup across restarts; unavailable cloud cleanup does not hide structured history.
 
-A local duplicate warning compares normalized merchant, purchase date, currency and cent-rounded total before copying the original. Users may explicitly save anyway; matching totals on the same day are only a possible duplicate, not proof.
+A local duplicate warning checks encrypted purchase history after reading and again before saving/copying the original. It compares normalized shop name, purchase date and currency, then receipt number when both entries have one. If a receipt number is missing, it compares cent-rounded totals and times when both are available (to their shared precision). Different known receipt numbers or times distinguish purchases. Older records without the optional fields remain compatible. Users may explicitly save anyway; a match is a duplicate warning, not proof. Deploy the updated extraction Worker and update the mobile app to enable automatic time/receipt-number extraction.
 
 Data-management tests run with `node --test tests/*.test.cjs` and mock native storage, encryption and sharing boundaries. Actual share-sheet behavior, device storage exhaustion, secure-key deletion and Android/iOS file deletion still require device testing.

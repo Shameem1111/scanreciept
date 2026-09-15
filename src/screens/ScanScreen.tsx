@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SecondaryButton } from '../components/Ui';
 import { ReceiptReview } from '../components/ReceiptReview';
 import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
@@ -11,14 +11,42 @@ import { hasDuplicate } from '../services/historyData';
 import { colors } from '../theme';
 import { ReceiptAsset } from '../types';
 import { pickReceipt, ReceiptInputError, type ReceiptInput } from '../services/receiptInput';
+import { extractReceipt } from '../services/receiptAi';
+import { isReceiptSignedIn, signInForReceipts } from '../services/receiptAuth';
 
 export function ScanScreen() {
   const { saveReceipt, receipts, storageProvider } = useReceiptStore();
   const [asset, setAsset] = useState<ReceiptAsset | null>(null);
   const [extracted, setExtracted] = useState<ReviewDraft | null>(null);
   const [busy, setBusy] = useState(false);
+  const [readingError, setReadingError] = useState<string | null>(null);
+
+  async function readReceipt(nextAsset: ReceiptAsset) {
+    setAsset(nextAsset);
+    setExtracted(null);
+    setReadingError(null);
+    try {
+      if (!isReceiptSignedIn()) {
+        await signInForReceipts(Platform.OS === 'ios' ? 'apple' : 'google');
+      }
+      const result = await extractReceipt(nextAsset);
+      setExtracted(createReviewDraft(result));
+      if (hasDuplicate(receipts, result)) {
+        Alert.alert('Receipt already available', 'A matching receipt is already in Purchases. Review the existing entry before saving another copy.');
+      }
+    } catch (error) {
+      setReadingError(error instanceof Error ? error.message : 'Could not read this receipt. Please retry.');
+    }
+  }
+
+  async function retryReading() {
+    if (busy || !asset) return;
+    setBusy(true);
+    try { await readReceipt(asset); } finally { setBusy(false); }
+  }
 
   function startManualReview(nextAsset: ReceiptAsset) {
+    setReadingError(null);
     setAsset(nextAsset);
     setExtracted(createReviewDraft({
       merchant: '',
@@ -44,7 +72,7 @@ export function ScanScreen() {
     try {
       const next = await pickReceipt(source);
       if (!next) return;
-      startManualReview(next);
+      await readReceipt(next);
     } catch (error) {
       Alert.alert('Receipt input unavailable', error instanceof ReceiptInputError ? error.message : 'Please try selecting the receipt again.',
         error instanceof ReceiptInputError && error.openSettings ? [
@@ -64,6 +92,7 @@ export function ScanScreen() {
 
   async function useDemo() {
     if (!__DEV__) return;
+    setReadingError(null);
     setAsset({ uri: '', name: 'demo-receipt.jpg', mimeType: 'image/jpeg' });
     setExtracted(createReviewDraft(demoReceipt));
   }
@@ -80,7 +109,7 @@ export function ScanScreen() {
     }
 
     if (!allowDuplicate && hasDuplicate(receipts, checked.receipt)) {
-      Alert.alert('Possible duplicate receipt', 'A receipt with the same merchant, date and total already exists. Check Purchases before saving another copy.', [
+      Alert.alert('Receipt already available', 'A matching receipt is already in Purchases based on the shop, date, receipt number or amount and available time. Check the existing entry before saving another copy.', [
         { text: 'Cancel', style: 'cancel' }, { text: 'Save anyway', onPress: () => { void save(true); } },
       ]);
       return;
@@ -104,7 +133,7 @@ export function ScanScreen() {
       <Text style={styles.subtitle}>Use the camera for a new receipt or upload an existing image/PDF.</Text>
 
       <Card>
-        <Text style={styles.small}>Temporary local mode: automatic reading is paused until the signed Apple/Google build is ready. Scan or upload a receipt, enter its details in the review form, and save it locally.</Text>
+        <Text style={styles.small}>Scan or upload to read the merchant, date, total and purchased items automatically. Then edit the detected details or add extra items before saving. Apple/Google sign-in is required for automatic reading; the receipt is sent securely to the AI service for processing.</Text>
       </Card>
 
       <View style={styles.actions}>
@@ -114,10 +143,16 @@ export function ScanScreen() {
       </View>
 
       {busy && <ActivityIndicator color={colors.primary} size="large" style={{ marginVertical: 24 }} />}
+      {busy && asset && !extracted && <Text style={styles.small}>Reading receipt — complete sign-in if prompted.</Text>}
       {asset?.uri && asset.mimeType.startsWith('image/') ? <Image source={{ uri: asset.uri }} style={styles.preview} resizeMode="cover" /> : null}
       {asset && !asset.uri ? <Card><Text style={styles.small}>Demo receipt selected.</Text></Card> : null}
       {asset?.mimeType === 'application/pdf' ? <Card><Text style={styles.small}>PDF selected: {asset.name}</Text></Card> : null}
 
+      {readingError && asset && <Card>
+        <Text accessibilityRole="alert" style={styles.small}>Automatic reading could not finish. {readingError}</Text>
+        <SecondaryButton label="Retry automatic reading" onPress={() => { void retryReading(); }} disabled={busy} />
+        <SecondaryButton label="Enter details manually" onPress={() => startManualReview(asset)} disabled={busy} />
+      </Card>}
       {extracted && <ReceiptReview draft={extracted} onChange={setExtracted} onSave={() => save()} busy={busy} />}
       <View style={{ height: 40 }} />
     </ScrollView>

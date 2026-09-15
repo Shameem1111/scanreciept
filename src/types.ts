@@ -27,6 +27,8 @@ export type Receipt = {
   id: string;
   merchant: string;
   purchaseDate: string;
+  purchaseTime?: string;
+  receiptNumber?: string;
   total: number;
   printedTotal?: number;
   currency: 'EUR';

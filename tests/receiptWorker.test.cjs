@@ -38,6 +38,25 @@ const extraction = (name) => ({
 });
 const success = (value) => Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(value) }] } }] });
 
+test('extracts sales receipt number and local time while excluding payment identifiers', async () => {
+  const worker = loadWorker(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.match(body.systemInstruction.parts[0].text, /Kassenbon Nr/);
+    assert.match(body.systemInstruction.parts[0].text, /Never use Terminal-ID/);
+    return success({ ...extraction('Exem Foam KIT 1St'), merchant: 'Arnika Apotheke', total: 123.12,
+      purchaseTime: '14:25:09', receiptNumber: '0011656' });
+  });
+  const actual = await (await worker.fetch(request(), env)).json();
+  assert.equal(actual.receiptNumber, '0011656');
+  assert.equal(actual.purchaseTime, '14:25:09');
+  for (const receiptNumber of ['TA-Nr 000505', 'VISA **1234', 'Terminal-ID 123', 'Genehmigungs-Nr 123']) {
+    const invalid = loadWorker(async () => success({ ...extraction('Foam'), purchaseTime: '25:00', receiptNumber }));
+    const cleaned = await (await invalid.fetch(request(), env)).json();
+    assert.equal(cleaned.receiptNumber, '');
+    assert.equal(cleaned.purchaseTime, '');
+  }
+});
+
 test('non-itemized pharmacy payment slip becomes one merchant purchase with exact cents', async () => {
   const worker = loadWorker(async (url, options) => {
     const prompt = JSON.parse(options.body).systemInstruction.parts[0].text;

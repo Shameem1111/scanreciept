@@ -14,6 +14,40 @@ function load(name) {
 }
 const { createReviewDraft, validateReview, itemTotal, lowConfidence, reviewNumber } = load('receiptReview');
 const { isSensitivePaymentText } = load('privacy');
+const { hasDuplicate, validateHistory, exportHistory } = load('historyData');
+
+test('optional time and sales receipt number survive review, encrypted-history validation and export', () => {
+  const input = { ...extraction(), merchant: 'Arnika Apotheke', purchaseTime: '14:25:09', receiptNumber: '0011656' };
+  const draft = createReviewDraft(input);
+  assert.equal(draft.receiptNumber, '0011656');
+  const receipt = validateReview(draft).receipt;
+  assert.equal(receipt.purchaseTime, '14:25:09');
+  const stored = { ...receipt, id: 'r1', storageProvider: 'local', storageReference: 'file:///receipt.jpg', originalFilename: 'receipt.jpg', createdAt: '2026-09-15T10:00:00Z' };
+  assert.equal(validateHistory([stored])[0].receiptNumber, '0011656');
+  assert.equal(JSON.parse(exportHistory([stored])).receipts[0].purchaseTime, '14:25:09');
+  for (const purchaseTime of ['24:00', '12:60', '12:30:99', 'tomorrow']) {
+    assert.equal(validateReview({ ...draft, purchaseTime }).receipt, null);
+  }
+  for (const receiptNumber of ['VISA **1234', 'TA-Nr 000505', 'Terminal-ID 12345', 'Genehmigungs-Nr 123', '1234567890123456']) {
+    assert.equal(validateReview({ ...draft, receiptNumber }).receipt, null);
+    assert.equal(createReviewDraft({ ...input, receiptNumber }).receiptNumber, '');
+  }
+  assert.ok(validateReview(createReviewDraft(extraction())).receipt);
+});
+
+test('duplicates use shop/date and receipt number, with amount/time fallback for older receipts', () => {
+  const prior = { ...extraction(), merchant: 'Arnika Apotheke', receiptNumber: '11656', purchaseTime: '14:25:09' };
+  assert.equal(hasDuplicate([prior], { ...prior, merchant: '  ARNIKA   APOTHEKE ', total: 999 }), true);
+  for (const patch of [{ receiptNumber: '11657' }, { merchant: 'Other pharmacy' }, { purchaseDate: '2026-09-14' }]) {
+    assert.equal(hasDuplicate([prior], { ...prior, ...patch }), false);
+  }
+  const older = { ...prior, receiptNumber: undefined, purchaseTime: undefined };
+  assert.equal(hasDuplicate([older], prior), true);
+  assert.equal(hasDuplicate([older], { ...prior, total: 999 }), false);
+  assert.equal(hasDuplicate([{ ...older, purchaseTime: '14:25' }], prior), true);
+  assert.equal(hasDuplicate([{ ...older, purchaseTime: '14:26' }], prior), false);
+  assert.equal(hasDuplicate([prior], { ...prior, purchaseDate: '' }), false);
+});
 const extraction = () => ({ merchant: 'REWE', purchaseDate: '2026-09-13', total: 3.50, currency: 'EUR', source: 'ai',
   items: [{ id: '1', originalText: 'BIO M?SLI gro?', name: 'M?sli', category: 'Food', quantity: 2, price: 3.50, confidence: .5 }] });
 test('corrections, additions and removals preserve source text and printed total', () => {

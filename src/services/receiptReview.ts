@@ -1,9 +1,13 @@
 import { Category, ExtractedReceipt } from '../types';
-import { isSensitivePaymentText, sanitizeItemText, sanitizeMerchant } from './privacy';
+import { isSensitivePaymentText, sanitizeItemText, sanitizeMerchant, sanitizeReceiptNumber } from './privacy';
 
 export const reviewCategories: Category[] = ['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other'];
 export type ReviewItem = { id: string; readonly originalText: string; name: string; category: Category; quantity: string; price: string; confidence: number };
-export type ReviewDraft = { merchant: string; purchaseDate: string; total: string; readonly printedTotal: number; source: ExtractedReceipt['source']; items: ReviewItem[] };
+export type ReviewDraft = { merchant: string; purchaseDate: string; purchaseTime?: string; receiptNumber?: string; total: string; readonly printedTotal: number; source: ExtractedReceipt['source']; items: ReviewItem[] };
+
+export function validPurchaseTime(value: unknown): string {
+  return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value) ? value : '';
+}
 
 export function validPurchaseDate(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return '';
@@ -26,6 +30,7 @@ export function reviewNumber(value: string, decimals = 2): number | null {
 export function createReviewDraft(receipt: ExtractedReceipt): ReviewDraft {
   return {
     merchant: sanitizeMerchant(receipt.merchant), purchaseDate: validPurchaseDate(receipt.purchaseDate),
+    purchaseTime: validPurchaseTime(receipt.purchaseTime), receiptNumber: sanitizeReceiptNumber(receipt.receiptNumber),
     total: String(receipt.total), printedTotal: receipt.printedTotal ?? receipt.total, source: receipt.source,
     items: receipt.items.map((item) => ({
       id: item.id, originalText: sanitizeItemText(item.originalText), name: sanitizeItemText(item.name),
@@ -50,6 +55,10 @@ export function validateReview(draft: ReviewDraft): { errors: Record<string, str
   if (!merchant || merchant === 'Unknown merchant' || isSensitivePaymentText(draft.merchant) || merchant === '[PAYMENT INFORMATION REMOVED]') errors.merchant = 'Enter a merchant without payment information.';
   const purchaseDate = validPurchaseDate(draft.purchaseDate.trim());
   if (!purchaseDate) errors.purchaseDate = 'Enter a real purchase date (YYYY-MM-DD).';
+  const purchaseTime = validPurchaseTime(draft.purchaseTime?.trim());
+  const receiptNumber = sanitizeReceiptNumber(draft.receiptNumber);
+  if (draft.purchaseTime?.trim() && !purchaseTime) errors.purchaseTime = 'Enter a time as HH:mm or HH:mm:ss, or leave blank.';
+  if (draft.receiptNumber?.trim() && !receiptNumber) errors.receiptNumber = 'Enter only the sales receipt number, without payment information, or leave blank.';
   const total = reviewNumber(draft.total);
   if (total === null) errors.total = 'Enter a non-negative EUR amount with at most two decimals.';
   if (!draft.items.length) errors.items = 'Add at least one purchased item.';
@@ -66,6 +75,7 @@ export function validateReview(draft: ReviewDraft): { errors: Record<string, str
   });
   return { errors, receipt: Object.keys(errors).length ? null : {
     merchant, purchaseDate, total: total!, currency: 'EUR', source: draft.source, items,
+    ...(purchaseTime ? { purchaseTime } : {}), ...(receiptNumber ? { receiptNumber } : {}),
     ...(Number.isFinite(draft.printedTotal) && draft.printedTotal >= 0 ? { printedTotal: draft.printedTotal } : {}),
   } };
 }

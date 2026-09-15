@@ -34,9 +34,17 @@ export function exportHistory(receipts: Receipt[]): string {
     receipts: validateHistory(receipts) }, null, 2);
 }
 
-export function hasDuplicate(receipts: Receipt[], candidate: Pick<Receipt, 'merchant' | 'purchaseDate' | 'total' | 'currency'>): boolean {
+export function hasDuplicate(receipts: Receipt[], candidate: Pick<Receipt, 'merchant' | 'purchaseDate' | 'purchaseTime' | 'receiptNumber' | 'total' | 'currency'>): boolean {
   const normalize = (s: string) => s.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
-  return receipts.some(r => normalize(r.merchant) === normalize(candidate.merchant) &&
-    r.purchaseDate === candidate.purchaseDate && r.currency === candidate.currency &&
-    Math.round(r.total * 100) === Math.round(candidate.total * 100));
+  if (!candidate.purchaseDate || !candidate.merchant.trim() || candidate.merchant === 'Unknown merchant') return false;
+  return receipts.some(r => {
+    if (normalize(r.merchant) !== normalize(candidate.merchant) || r.purchaseDate !== candidate.purchaseDate || r.currency !== candidate.currency) return false;
+    // Receipt numbers can restart daily and are only unique within a shop/date.
+    if (r.receiptNumber && candidate.receiptNumber) return normalize(r.receiptNumber) === normalize(candidate.receiptNumber);
+    if (r.purchaseTime && candidate.purchaseTime) {
+      const precision = Math.min(r.purchaseTime.length, candidate.purchaseTime.length);
+      if (r.purchaseTime.slice(0, precision) !== candidate.purchaseTime.slice(0, precision)) return false;
+    }
+    return Math.round(r.total * 100) === Math.round(candidate.total * 100);
+  });
 }

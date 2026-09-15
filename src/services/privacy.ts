@@ -26,3 +26,12 @@ export function sanitizeMerchant(value: string): string {
 export function sanitizeItemText(value: string): string {
   return redactSensitivePaymentText(value).slice(0, 160);
 }
+
+// Only the sales receipt number belongs here, never identifiers from the payment slip.
+export function sanitizeReceiptNumber(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const clean = value.normalize('NFKC').trim();
+  if (!/^[\p{L}\p{N}][\p{L}\p{N} ./_-]{0,63}$/u.test(clean) ||
+      isSensitivePaymentText(clean) || /\b(?:TA[- ]?NR|BNR|VU[- ]?NR|GENEHMIGUNGS[- ]?NR|EMV|AID)\b/i.test(clean)) return '';
+  return clean;
+}

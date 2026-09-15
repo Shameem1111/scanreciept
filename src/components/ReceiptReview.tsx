@@ -26,10 +26,12 @@ export function ReceiptReview({ draft, onChange, onSave, busy }: {
     onChange({ ...draft, items: draft.items.map((item, i) => i === index ? { ...item, ...patch } : item) });
   return <View style={styles.content}>
     <SectionTitle>Review and confirm</SectionTitle>
-    <Text style={styles.help}>Check every field against your receipt. Highlighted values need special attention.</Text>
+    <Text style={styles.help}>{draft.source === 'ai' ? 'Receipt details were read automatically. Edit any detected value or add extra purchased items below. Missing or highlighted values need confirmation.' : 'Check every field against your receipt. Highlighted values need special attention.'}</Text>
     <Card>
       <Field label="Merchant" value={draft.merchant} onChange={merchant => onChange({ ...draft, merchant })} error={errors.merchant} uncertain={draft.source === 'ai'} disabled={busy} />
       <Field label="Purchase date (YYYY-MM-DD)" value={draft.purchaseDate} onChange={purchaseDate => onChange({ ...draft, purchaseDate })} error={errors.purchaseDate} uncertain={draft.source === 'ai' || !draft.purchaseDate} disabled={busy} />
+      <Field label="Purchase time (HH:mm or HH:mm:ss, optional)" value={draft.purchaseTime ?? ''} onChange={purchaseTime => onChange({ ...draft, purchaseTime })} error={errors.purchaseTime} disabled={busy} />
+      <Field label="Receipt number / Kassenbon Nr. (optional)" value={draft.receiptNumber ?? ''} onChange={receiptNumber => onChange({ ...draft, receiptNumber })} error={errors.receiptNumber} disabled={busy} />
       <Field label="Confirmed receipt total (EUR)" value={draft.total} onChange={total => onChange({ ...draft, total })} error={errors.total} uncertain={draft.source === 'ai'} numeric disabled={busy} />
       <Text style={styles.help}>Printed total (extracted): EUR {draft.printedTotal.toFixed(2)}</Text>
       <Text style={styles.help}>Purchased item total: {sum === null ? 'Correct item prices to calculate' : `EUR ${sum.toFixed(2)}`}</Text>

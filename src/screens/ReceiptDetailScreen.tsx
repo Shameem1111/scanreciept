@@ -55,6 +55,8 @@ export function ReceiptDetailScreen({ receiptId, onBack, backLabel = 'Back to pu
         <Card>
           <Text style={styles.merchant}>{receipt.merchant}</Text>
           <Text style={styles.text}>Date: {receipt.purchaseDate}</Text>
+          {!!receipt.purchaseTime && <Text style={styles.text}>Time: {receipt.purchaseTime}</Text>}
+          {!!receipt.receiptNumber && <Text style={styles.text}>Receipt number: {receipt.receiptNumber}</Text>}
           <Text style={styles.text}>Total: EUR {receipt.total.toFixed(2)}</Text>
           <Text style={styles.text}>Storage provider: {storageProviders[receipt.storageProvider]?.label ?? 'Unknown provider'}</Text>
         </Card>

@@ -1,8 +1,8 @@
 import { File } from 'expo-file-system';
 import { fetch } from 'expo/fetch';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
-import { validPurchaseDate } from './receiptReview';
-import { sanitizeItemText, sanitizeMerchant } from './privacy';
+import { validPurchaseDate, validPurchaseTime } from './receiptReview';
+import { sanitizeItemText, sanitizeMerchant, sanitizeReceiptNumber } from './privacy';
 import { clearReceiptSession, receiptAuthorization, receiptEndpoint } from './receiptAuth';
 
 const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other']);
@@ -56,6 +56,8 @@ function sanitizeExtractedReceipt(input: ExtractedReceipt): ExtractedReceipt {
   return {
     merchant: sanitizeMerchant(input.merchant || 'Unknown merchant'),
     purchaseDate: validPurchaseDate(input.purchaseDate),
+    purchaseTime: validPurchaseTime(input.purchaseTime),
+    receiptNumber: sanitizeReceiptNumber(input.receiptNumber),
     total: input.total,
     source: 'ai',
     currency: 'EUR',

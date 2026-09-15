@@ -62,6 +62,17 @@ const result = {
 };
 const response = (value) => ({ ok: true, json: async () => value });
 
+test('client preserves receipt metadata and removes invalid or payment metadata', async () => {
+  const service = loadService(undefined, async () => response({ ...result, purchaseTime: '14:25', receiptNumber: '0011656' }));
+  const actual = await service.extractReceipt(asset);
+  assert.equal(actual.purchaseTime, '14:25');
+  assert.equal(actual.receiptNumber, '0011656');
+  const invalid = loadService(undefined, async () => response({ ...result, purchaseTime: '24:00', receiptNumber: 'TA-Nr 000505' }));
+  const cleaned = await invalid.extractReceipt(asset);
+  assert.equal(cleaned.purchaseTime, '');
+  assert.equal(cleaned.receiptNumber, '');
+});
+
 test('merchant-only purchase survives client validation with exact cents', async () => {
   const service = loadService(undefined, async () => response({
     ...result, merchant: 'Apotheke Taufkirchen', purchaseDate: '2026-09-03', total: 373.16,

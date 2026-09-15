@@ -60,6 +60,8 @@ const receiptSchema = {
   properties: {
     merchant: { type: 'string' },
     purchaseDate: { type: 'string', description: 'YYYY-MM-DD, or empty when uncertain' },
+    purchaseTime: { type: 'string', description: 'Printed local purchase time HH:mm or HH:mm:ss; empty if absent or uncertain' },
+    receiptNumber: { type: 'string', description: 'Sales receipt number labelled Kassenbon Nr., Bonnummer or Receipt No.; never payment identifiers; empty if absent or uncertain' },
     total: { type: 'number' },
     currency: { type: 'string' },
     items: {
@@ -101,6 +103,14 @@ function validDate(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return '';
   const parsed = new Date(`${value}T00:00:00Z`);
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? '' : value;
+}
+
+function receiptNumber(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const clean = value.normalize('NFKC').trim();
+  if (!/^[\p{L}\p{N}][\p{L}\p{N} ./_-]{0,63}$/u.test(clean) ||
+      isSensitivePaymentText(clean) || /\b(?:TA[- ]?NR|BNR|VU[- ]?NR|GENEHMIGUNGS[- ]?NR|EMV|AID)\b/i.test(clean)) return '';
+  return clean;
 }
 
 function sanitizeExtraction(input: unknown): Record<string, unknown> {
@@ -147,6 +157,8 @@ function sanitizeExtraction(input: unknown): Record<string, unknown> {
   return {
     merchant: merchant ?? 'Unknown merchant',
     purchaseDate: validDate(record.purchaseDate),
+    purchaseTime: typeof record.purchaseTime === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(record.purchaseTime) ? record.purchaseTime : '',
+    receiptNumber: receiptNumber(record.receiptNumber),
     total,
     currency: 'EUR',
     source: 'ai',
@@ -190,6 +202,10 @@ export async function extractReceipt(file: File, mimeType: string, env: Env, usa
     'Preserve German umlauts and ÃŸ. Keep normalized names in the language of the printed item; do not translate originalText.',
     'Interpret German amounts such as 1.234,56 as JSON number 1234.56, and English amounts such as 1,234.56 as 1234.56.',
     'Interpret German dates such as 13.09.2026 as 2026-09-13. Use language and printed context for English dates; leave ambiguous dates empty.',
+    'Extract the printed shop name as merchant, including names in logos when legible.',
+    'Extract the local purchase time as HH:mm or HH:mm:ss only when printed; do not invent seconds or a timezone. Leave missing or uncertain times empty.',
+    'Extract receiptNumber only from an explicitly labelled sales receipt number such as Kassenbon Nr., Bonnummer, or Receipt No.; return the identifier without its label, preserving leading zeros.',
+    'Never use Terminal-ID, TA-Nr, BNr, VU-Nr, Genehmigungs-Nr, authorization or payment transaction references as receiptNumber. If only a payment identifier exists, leave receiptNumber empty.',
     'Recognize Summe/Gesamt/Total and MwSt/USt/VAT. Totals, taxes and payment lines are not purchased items.',
     'Also accept non-itemized receipts and card-payment slips (Kartenzahlungsbeleg): extract the printed merchant, purchase date, and final purchase amount such as Betrag EUR or Amount.',
     'The purchase amount is allowed even on a card-payment slip; exclude all payment credentials and identifiers.',
