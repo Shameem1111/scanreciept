@@ -1,14 +1,15 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, SectionTitle } from '../components/Ui';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
+import { Category } from '../types';
 
-export function HomeScreen() {
+export function HomeScreen({ onCategoryPress }: { onCategoryPress?: (category: Category) => void }) {
   const { receipts } = useReceiptStore();
   const stats = useMemo(() => {
     const total = receipts.reduce((sum, r) => sum + r.total, 0);
-    const categoryTotals = new Map<string, number>();
+    const categoryTotals = new Map<Category, number>();
     receipts.forEach((r) => r.items.forEach((item) => categoryTotals.set(item.category, (categoryTotals.get(item.category) ?? 0) + item.price)));
     return { total, categoryTotals: [...categoryTotals.entries()].sort((a, b) => b[1] - a[1]) };
   }, [receipts]);
@@ -29,10 +30,14 @@ export function HomeScreen() {
       {stats.categoryTotals.length === 0 ? (
         <Card><Text style={styles.empty}>Scan or upload your first receipt to see spending here.</Text></Card>
       ) : stats.categoryTotals.map(([category, amount]) => (
-        <View key={category} style={styles.categoryRow}>
+        <Pressable key={category} accessibilityRole="button" accessibilityLabel={`Show ${category} purchases`}
+          onPress={() => onCategoryPress?.(category)} style={({ pressed }) => [styles.categoryRow, pressed && styles.categoryPressed]}>
           <Text style={styles.categoryName}>{category}</Text>
-          <Text style={styles.categoryAmount}>€{amount.toFixed(2)}</Text>
-        </View>
+          <View style={styles.categoryRight}>
+            <Text style={styles.categoryAmount}>€{amount.toFixed(2)}</Text>
+            <Text style={styles.chevron}>›</Text>
+          </View>
+        </Pressable>
       ))}
 
       <View style={{ height: 40 }} />
@@ -48,8 +53,11 @@ const styles = StyleSheet.create({
   hero: { marginBottom: 24 },
   muted: { color: colors.muted, fontSize: 14 },
   total: { fontSize: 38, fontWeight: '900', color: colors.text, marginVertical: 6 },
-  categoryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
+  categoryRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
+  categoryPressed: { opacity: 0.55 },
   categoryName: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  categoryRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   categoryAmount: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  chevron: { color: colors.primary, fontSize: 24, lineHeight: 24, fontWeight: '700' },
   empty: { color: colors.muted, lineHeight: 22 },
 });
