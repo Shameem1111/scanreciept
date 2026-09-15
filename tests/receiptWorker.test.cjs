@@ -8,7 +8,7 @@ const ts = require('typescript');
 function loadWorker(fetch) {
   const cache = {};
   function load(name) {
-    if (name === 'jose') return { createRemoteJWKSet: () => ({}), jwtVerify: async () => ({payload:{sub:'test-user'}}) };
+    if (name === 'jose') return { createRemoteJWKSet: () => ({}), decodeJwt: () => ({iss:'https://accounts.google.com'}), jwtVerify: async () => ({payload:{sub:'test-user', exp:Date.now()/1000+3600, iat:Date.now()/1000}}) };
     if (name === 'cloudflare:workers') return { DurableObject: class {} };
     const filename = path.resolve(__dirname, '../backend/receiptmind-worker/src', name + '.ts');
     if (cache[filename]) return cache[filename];

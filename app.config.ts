@@ -16,7 +16,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     if (!legalUrl(process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL) || !legalUrl(process.env.EXPO_PUBLIC_DATA_DELETION_URL)) {
       throw new Error('Production requires real HTTPS privacy-policy and data-deletion URLs. Configure the EXPO_PUBLIC_* URL variables.');
     }
-    for (const name of ['EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID', 'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID', 'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID']) {
+    // iPhone users can use Apple without configuring Google OAuth.
+    const requiredGoogleIds = process.env.EAS_BUILD_PLATFORM === 'ios' ? [] :
+      ['EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID', 'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID'];
+    for (const name of requiredGoogleIds) {
       if (!/^[0-9]+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(process.env[name] ?? '')) throw new Error(`Production requires ${name}.`);
     }
   }

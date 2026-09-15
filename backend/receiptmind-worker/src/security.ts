@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { DurableObject } from 'cloudflare:workers';
 
 export interface SecurityEnv extends Omit<CloudflareBindings, 'SCAN_GUARD'> {
@@ -16,21 +16,35 @@ export class SafeError extends Error {
 const googleKeys = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'), {
   timeoutDuration: 5000, cooldownDuration: 30000, cacheMaxAge: 3600000,
 });
+const appleKeys = createRemoteJWKSet(new URL('https://appleid.apple.com/auth/keys'), {
+  timeoutDuration: 5000, cooldownDuration: 30000, cacheMaxAge: 3600000,
+});
 
 export async function authenticate(request: Request, env: SecurityEnv): Promise<string> {
+  return (await verifySignIn(request, env)).identity;
+}
+export async function verifySignIn(request: Request, env: SecurityEnv): Promise<{ identity: string; expiresAt: number }> {
   const header = request.headers.get('authorization');
   if (!header) throw new SafeError('AUTH_REQUIRED', 401);
   if (!/^Bearer [A-Za-z0-9_.-]+$/.test(header) || header.length > 8192) throw new SafeError('AUTH_INVALID', 401);
-  if (!env.GOOGLE_WEB_CLIENT_ID) throw new SafeError('SERVICE_CONFIG', 503);
   try {
-    const { payload } = await jwtVerify(header.slice(7), googleKeys, {
-      algorithms: ['RS256'], audience: env.GOOGLE_WEB_CLIENT_ID,
-      issuer: ['https://accounts.google.com', 'accounts.google.com'],
+    // Unverified issuer only selects a fixed verifier; all claims and signature
+    // must then pass verification against that provider's keys and audience.
+    const issuer = decodeJwt(header.slice(7)).iss;
+    const apple = issuer === 'https://appleid.apple.com';
+    if (!apple && issuer !== 'https://accounts.google.com' && issuer !== 'accounts.google.com') throw new Error();
+    const audience = apple ? env.APPLE_BUNDLE_ID : env.GOOGLE_WEB_CLIENT_ID;
+    if (!audience) throw new SafeError('SERVICE_CONFIG', 503);
+    const { payload } = await jwtVerify(header.slice(7), apple ? appleKeys : googleKeys, {
+      algorithms: ['RS256'], audience,
+      issuer: apple ? 'https://appleid.apple.com' : ['https://accounts.google.com', 'accounts.google.com'],
       requiredClaims: ['sub', 'exp', 'iat'], maxTokenAge: '1h',
     });
     if (!payload.sub || payload.sub.length > 255) throw new Error();
-    return payload.sub;
+    // Preserve existing Google quota identities; Apple subjects cannot collide.
+    return { identity: apple ? `apple:${payload.sub}` : payload.sub, expiresAt: Math.min(payload.exp!, payload.iat! + 3600) * 1000 };
   } catch (error) {
+    if (error instanceof SafeError) throw error;
     const code = (error as { code?: string }).code;
     if (code === 'ERR_JWKS_TIMEOUT' || code === 'ERR_JOSE_GENERIC' || error instanceof TypeError) {
       throw new SafeError('AUTH_UNAVAILABLE', 503);

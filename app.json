@@ -7,6 +7,7 @@
     "scheme": "receiptmind",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "usesAppleSignIn": true,
       "supportsTablet": true,
       "bundleIdentifier": "com.shameem.receiptmind",
       "usesIcloudStorage": true,
@@ -48,6 +49,7 @@
       }
     },
     "plugins": [
+      "expo-apple-authentication",
       [
         "expo-image-picker",
         {

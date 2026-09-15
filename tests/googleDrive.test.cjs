@@ -146,11 +146,21 @@ test('receipt auth uses public audience and native ID token without Drive scope'
   assert.equal(h.calls.some(c=>c[0]==='addScopes'),false);
 });
 test('receipt auth rejects missing config, cancelled consent, and missing ID tokens safely', async()=>{
-  await assert.rejects(harness().auth.receiptAuthorization(),/configuration/);
+  await assert.rejects(harness().auth.receiptAuthorization(),/not configured/);
   for (const mode of ['cancel','missingToken']) {
     const h=harness('android',{EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:'123-test.apps.googleusercontent.com',EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:'789-test.apps.googleusercontent.com'});
     h.state.revoked=true; h.state.cancel=mode==='cancel'; if(mode==='missingToken')h.state.idToken=null;
     await assert.rejects(h.auth.receiptAuthorization(),/Sign in to read receipts/);
     assert.equal(h.requests.length,0);
   }
+});
+
+test('receipt auth explains missing mobile setup or native SDK before attempting sign-in', async()=>{
+  const env={EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:'789-test.apps.googleusercontent.com'};
+  const h=harness('android',env);
+  await assert.rejects(h.auth.receiptAuthorization(),/configured Android or iPhone app/);
+  assert.equal(h.calls.length,0);
+  const auth=loader({'react-native':{Platform:{OS:'android'}}},
+    {...env,EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:'123-test.apps.googleusercontent.com'})('services/googleDriveAuth');
+  await assert.rejects(auth.receiptAuthorization(),/Expo Go/);
 });

@@ -83,6 +83,8 @@ Questions containing payment/banking information are rejected and redacted befor
 
 ## Real AI extraction
 
+If receipt reading reports missing sign-in configuration, follow [Enable receipt reading](RECEIPT_SETUP.md) to configure Google OAuth and install a native build.
+
 Do not put a Gemini/OpenAI secret in Expo environment variables. Follow the separate [manual Worker deployment guide](backend/receiptmind-worker/DEPLOYMENT.md) to configure authentication, secrets, allowances and pricing. The endpoint URL remains public:
 
 ```bash

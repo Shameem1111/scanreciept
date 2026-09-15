@@ -30,7 +30,8 @@ const { convertFormDataAsync } = loadExpo('winter/fetch/convertFormData');
 // Exercise the actual TypeScript service without loading the native Expo runtime.
 function loadService(endpoint, fetch, readFile = async () => new TextEncoder().encode('receipt file bytes').buffer) {
   function load(relativePath) {
-    if (relativePath === './googleDriveAuth') return { receiptAuthorization: async () => 'test-id-token' };
+    if (relativePath === './receiptAuth') return { receiptAuthorization: async () => 'test-id-token', clearReceiptSession: () => {},
+      receiptEndpoint: endpoint?.trim() || 'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract' };
     if (relativePath === 'expo/fetch') return { fetch: async (url, options) => {
       const encoded = await convertFormDataAsync(options.body);
       return fetch(url, { ...options, encoded });

@@ -1,4 +1,4 @@
-import { authenticate, boundedBody, consume, identity, limit, SafeError, validateFile } from './security';
+import { verifySignIn, boundedBody, consume, identity, limit, SafeError, validateFile } from './security';
 import { extractReceipt, ExtractionError, type Env, type Usage } from './index';
 
 function price(value: string): number {
@@ -29,26 +29,29 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
   try {
     const url = new URL(request.url);
+    const sessionRequest = url.pathname === '/receipt/session';
     if (!allowed) throw new SafeError('ORIGIN_DENIED', 403);
-    if (url.pathname !== '/receipt/extract' && url.pathname !== '/health') throw new SafeError('NOT_FOUND', 404);
+    if (url.pathname !== '/receipt/extract' && url.pathname !== '/health' && !sessionRequest) throw new SafeError('NOT_FOUND', 404);
     if (request.method === 'OPTIONS') {
-      if (url.pathname !== '/receipt/extract' || request.headers.get('access-control-request-method') !== 'POST' ||
+      if ((url.pathname !== '/receipt/extract' && !sessionRequest) || request.headers.get('access-control-request-method') !== 'POST' ||
         (request.headers.get('access-control-request-headers') ?? '').split(',').some(h => h.trim() && !['accept', 'content-type', 'authorization'].includes(h.trim().toLowerCase()))) throw new SafeError('CORS_DENIED', 403);
       code = 'OK'; return reply(null, 204);
     }
     if (request.method === 'GET' && url.pathname === '/health') { code = 'OK'; return reply({ ok: true, service: 'receiptmind-api' }); }
-    if (request.method !== 'POST' || url.pathname !== '/receipt/extract') throw new SafeError('METHOD_NOT_ALLOWED', 405);
+    if (request.method !== 'POST' || (url.pathname !== '/receipt/extract' && !sessionRequest)) throw new SafeError('METHOD_NOT_ALLOWED', 405);
     // Cloudflare sets this at ingress. Never trust X-Forwarded-For.
     const ip = request.headers.get('cf-connecting-ip');
     if (!ip) throw new SafeError('CLIENT_ADDRESS_UNAVAILABLE', 503);
     const ipKey = await identity(env, 'ip', ip);
     await consume(env, ipKey, 'requests', limit(env.IP_REQUESTS_PER_MINUTE), 'minute');
-    user = await identity(env, 'user', await authenticate(request, env));
+    const signIn = await verifySignIn(request, env);
+    user = await identity(env, 'user', signIn.identity);
     await consume(env, user, 'requests', limit(env.USER_REQUESTS_PER_MINUTE), 'minute');
     if (env.SCANS_ENABLED !== 'true') throw new SafeError('SCANS_DISABLED', 503);
     if (!env.GEMINI_API_KEY?.trim()) throw new SafeError('PROVIDER_CONFIG', 503);
     inputPrice = price(env.INPUT_USD_PER_MILLION);
     outputPrice = price(env.OUTPUT_USD_PER_MILLION);
+    if (sessionRequest) { code = 'OK'; return reply({ expiresAt: signIn.expiresAt }); }
     const contentType = request.headers.get('content-type') ?? '';
     if (!/^multipart\/form-data;\s*boundary=/i.test(contentType) || request.headers.has('content-encoding')) throw new SafeError('INVALID_UPLOAD', 400);
     const maximum = 10 * 1024 * 1024 + 64 * 1024;

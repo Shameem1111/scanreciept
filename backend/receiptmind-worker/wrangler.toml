@@ -12,6 +12,7 @@ command = "node scripts/manual-release.cjs"
 [vars]
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 GOOGLE_WEB_CLIENT_ID = ""
+APPLE_BUNDLE_ID = "com.shameem.receiptmind"
 ALLOWED_ORIGINS = ""
 SCANS_ENABLED = "false"
 USER_REQUESTS_PER_MINUTE = "6"

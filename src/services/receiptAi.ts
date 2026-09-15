@@ -3,13 +3,11 @@ import { fetch } from 'expo/fetch';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
 import { validPurchaseDate } from './receiptReview';
 import { sanitizeItemText, sanitizeMerchant } from './privacy';
-import { receiptAuthorization } from './googleDriveAuth';
+import { clearReceiptSession, receiptAuthorization, receiptEndpoint } from './receiptAuth';
 
 const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other']);
 
-const DEFAULT_RECEIPT_AI_ENDPOINT =
-  'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract';
-const endpoint = process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT?.trim() || DEFAULT_RECEIPT_AI_ENDPOINT;
+const endpoint = receiptEndpoint;
 const extractionErrors: Record<string, string> = {
   AUTH_REQUIRED: 'Sign in to read receipts, then retry.',
   AUTH_INVALID: 'Your receipt sign-in expired. Sign out in Settings, sign in and retry.',
@@ -89,6 +87,7 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
     });
 
     if (!response.ok) {
+      if (response.status === 401) clearReceiptSession();
       // Only display known messages, never raw provider errors or receipt contents.
       const failure = await response.json().catch(() => null) as { code?: unknown } | null;
       if (typeof failure?.code === 'string' && Object.hasOwn(extractionErrors, failure.code)) {

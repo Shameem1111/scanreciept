@@ -13,6 +13,42 @@ beforeAll(async () => {
   jwk = { ...await exportJWK(keys.publicKey), kid: 'test-key', alg: 'RS256', use: 'sig' };
 });
 afterEach(() => vi.restoreAllMocks());
+
+async function appleToken(audience = 'com.shameem.receiptmind', key?: CryptoKey, expired = false) {
+  return new SignJWT({}).setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
+    .setIssuer('https://appleid.apple.com').setAudience(audience).setSubject('user-one')
+    .setIssuedAt().setExpirationTime(expired ? Math.floor(Date.now() / 1000) - 60 : '1h').sign(key ?? privateKey);
+}
+function sessionRequest(jwt?: string) {
+  return new Request('https://api.example/receipt/session', { method: 'POST',
+    headers: { 'CF-Connecting-IP': '192.0.2.10', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) } });
+}
+test('Apple sign-in unlocks scanning without Google configuration and does not spend a scan', async () => {
+  const h = harness({ GOOGLE_WEB_CLIENT_ID: '', APPLE_BUNDLE_ID: 'com.shameem.receiptmind', USER_SCANS_PER_MONTH: '1' });
+  const jwt = await appleToken();
+  const response = await worker.fetch(sessionRequest(jwt), h.config);
+  expect(response.status).toBe(200);
+  expect((await response.json()).expiresAt).toBeGreaterThan(Date.now());
+  expect(h.calls()).toBe(0);
+  expect((await worker.fetch(upload(jwt), h.config)).status).toBe(200);
+  expect(h.calls()).toBe(1);
+});
+test('session preflight fails closed for missing auth, wrong Apple audience, expiry, signature and missing configuration', async () => {
+  const h = harness({ APPLE_BUNDLE_ID: 'com.shameem.receiptmind' });
+  const other = await generateKeyPair('RS256');
+  for (const jwt of [undefined, await appleToken('other.app'), await appleToken(undefined, undefined, true), await appleToken(undefined, other.privateKey)]) {
+    expect((await worker.fetch(sessionRequest(jwt), h.config)).status).toBe(401);
+  }
+  expect((await worker.fetch(sessionRequest(await appleToken()), { ...h.config, APPLE_BUNDLE_ID: '' })).status).toBe(503);
+  expect((await worker.fetch(sessionRequest(await appleToken()), { ...h.config, SCANS_ENABLED: 'false' })).status).toBe(503);
+  expect(h.calls()).toBe(0);
+});
+test('Apple and Google subjects have independent scan identities', async () => {
+  const h = harness({ APPLE_BUNDLE_ID: 'com.shameem.receiptmind', USER_SCANS_PER_MONTH: '1' });
+  expect((await worker.fetch(upload(await appleToken()), h.config)).status).toBe(200);
+  expect((await worker.fetch(upload(await token()), h.config)).status).toBe(200);
+  expect((await worker.fetch(upload(await appleToken()), h.config)).status).toBe(429);
+});
 const receipt = { merchant: 'Synthetic shop', purchaseDate: '2026-09-14', total: 2, currency: 'EUR',
   items: [{ originalText: 'Apples', name: 'Apples', category: 'Food', quantity: 1, price: 2, confidence: 1 }] };
 
@@ -22,7 +58,7 @@ function harness(overrides: Partial<Env> = {}) {
   let providerCalls = 0;
   const network = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     const url = String(input);
-    if (url === 'https://www.googleapis.com/oauth2/v3/certs') return Response.json({ keys: [jwk] });
+    if (url === 'https://www.googleapis.com/oauth2/v3/certs' || url === 'https://appleid.apple.com/auth/keys') return Response.json({ keys: [jwk] });
     if (url.startsWith('https://generativelanguage.googleapis.com/')) {
       providerCalls++;
       return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(receipt) }] } }],

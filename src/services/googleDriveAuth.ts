@@ -37,7 +37,10 @@ function configuredSdk() {
 // Only the public web client ID is shipped. Tokens stay in native SDK storage/memory.
 export async function receiptAuthorization(): Promise<string> {
   if (!CLIENT_ID.test(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '')) {
-    throw new Error('Receipt sign-in needs OAuth configuration and a native app build. Contact the service owner.');
+    throw new Error('Receipt sign-in is not configured in this app version. The app owner needs to configure Google sign-in and rebuild ReceiptMind. Retrying the receipt will not fix this.');
+  }
+  if (!isGoogleConfigured()) {
+    throw new Error('Receipt sign-in needs a configured Android or iPhone app. If you are using Expo Go, install a ReceiptMind development or preview build instead. Otherwise, the app owner must complete mobile Google sign-in setup and rebuild.');
   }
   const client = configuredSdk();
   try {
