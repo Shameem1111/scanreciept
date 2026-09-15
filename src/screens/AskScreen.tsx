@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SecondaryButton } from '../components/Ui';
 import { describePurchaseQuery, executePurchaseQuery, preparePurchaseQuestion, queryGuidance, summarizePurchaseResult } from '../services/purchaseQuery';
 import { PurchaseQuery } from '../services/purchaseQueryTypes';
@@ -32,10 +32,25 @@ export function AskScreen() {
   const { hydrated } = useReceiptStore();
   const [question, setQuestion] = useState('');
   const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', text: 'Ask about saved purchases in English or German. All queries run on this device.\n\n' + queryGuidance },
   ]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, event => {
+      setKeyboardHeight(event.endCoordinates.height);
+      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    });
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   function send() {
     if (!hydrated || !question.trim()) return;
@@ -47,7 +62,7 @@ export function AskScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
+    <View style={styles.root}>
       <Modal visible={receiptId !== null} animationType="slide" onRequestClose={() => setReceiptId(null)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
           {receiptId && <ReceiptDetailScreen key={receiptId} receiptId={receiptId} backLabel="Back to Ask" onBack={() => setReceiptId(null)} />}
@@ -63,7 +78,7 @@ export function AskScreen() {
           </View>
         ))}
       </ScrollView>
-      <View style={styles.composer}>
+      <View style={[styles.composer, keyboardHeight > 0 && { marginBottom: keyboardHeight }]}>
         <TextInput accessibilityLabel="Ask about purchases" value={question} onChangeText={setQuestion} onSubmitEditing={send}
           onFocus={() => requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))}
           maxLength={500} placeholder={hydrated ? 'Ask about your purchases…' : 'Loading purchases…'}
@@ -71,7 +86,7 @@ export function AskScreen() {
         <Pressable accessibilityRole="button" accessibilityLabel="Send question" disabled={!hydrated || !question.trim()} onPress={send}
           style={[styles.send, (!hydrated || !question.trim()) && styles.sendDisabled]}><Text style={styles.sendText}>↑</Text></Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 const styles = StyleSheet.create({
