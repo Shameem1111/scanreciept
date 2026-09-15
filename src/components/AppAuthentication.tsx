@@ -66,7 +66,9 @@ function LoginScreen() {
         {busy && <View style={styles.progress}><ActivityIndicator color={colors.primary} /><Text style={styles.copy}>Signing in…</Text></View>}
         {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
         {!checking && !appleAvailable && !googleAvailable &&
-          <Text accessibilityRole="alert" style={styles.error}>Sign-in is not configured in this app version. Install a native ReceiptMind build with Google or Apple sign-in enabled.</Text>}
+          <Text accessibilityRole="alert" style={styles.error}>{Platform.OS === 'ios'
+            ? 'Sign in with Apple is unavailable in this installed build. Install a newly built ReceiptMind app on a physical iPhone with Apple sign-in enabled; a JavaScript update cannot add the native capability.'
+            : 'Sign-in is not configured in this app version. Install a native ReceiptMind build with Google sign-in enabled.'}</Text>}
         <Text style={styles.privacy}>Your password stays with Google or Apple. ReceiptMind never receives or stores it. Original receipts use local device storage by default.</Text>
       </Card>
     </ScrollView>

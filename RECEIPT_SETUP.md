@@ -6,11 +6,19 @@ and recovery; ReceiptMind never asks for or stores the password. The same
 verified session identifies the account for scan limits. It does not grant
 Google Drive storage access, which remains a separate choice in Settings.
 
-## Why this build cannot read receipts
+## Why this build cannot sign in
 
-The `Receipt sign-in is not configured` error means the JavaScript build is
-missing a valid `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`. Retrying or taking a new
-photo cannot fix it. The native Google sign-in library also cannot run in Expo Go.
+On Android, the `Sign-in is not configured` error means the JavaScript build is
+missing valid Google OAuth client IDs. Retrying or taking a new photo cannot fix
+it. The native Google sign-in library also cannot run in Expo Go.
+
+On iPhone, Google OAuth is optional because Apple sign-in is enabled. If the app
+says Apple sign-in is unavailable, install a fresh native build on a physical
+iPhone running iOS 13 or later. The binary must be built after
+`expo-apple-authentication`, the `expo-apple-authentication` config plugin, and
+`ios.usesAppleSignIn` are enabled. An over-the-air JavaScript update cannot add
+that native module or entitlement. The generated iOS entitlements should contain
+`com.apple.developer.applesignin` with the `Default` value.
 
 ## 1. Register Google sign-in
 
@@ -69,8 +77,9 @@ npx eas-cli build --platform android --profile preview
 
 Install the APK from the completed build onto the phone and open ReceiptMind.
 For iPhone, use `--platform ios --profile preview`; Apple signing and a registered
-test device are required. Production builds require both platform client IDs
-and the legal-page URLs validated by `app.config.ts`.
+physical test device are required. Google client IDs are optional for an iPhone
+build that offers Apple sign-in. Production builds require the legal-page URLs
+validated by `app.config.ts`.
 
 Open the app and complete Google or Apple sign-in. The menus then appear and Scan
 is immediately available because original receipt storage defaults to This
