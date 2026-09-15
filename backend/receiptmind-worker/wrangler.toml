@@ -2,6 +2,10 @@ name = "receiptmind-api"
 main = "src/index.ts"
 tsconfig = "tsconfig.json"
 compatibility_date = "2026-09-13"
+
+# Development/default deployments may use workers.dev. Production must be
+# deployed with `wrangler deploy --env production` and attached to a custom
+# route/domain in Cloudflare; it deliberately has no workers.dev fallback.
 workers_dev = true
 preview_urls = false
 
@@ -15,7 +19,7 @@ USER_REQUESTS_PER_MINUTE = "6"
 IP_REQUESTS_PER_MINUTE = "30"
 USER_SCANS_PER_MONTH = "50"
 IP_SCANS_PER_DAY = "200"
-# Set the current model's USD prices before enabling scans. Empty fails closed.
+# Pricing is observability-only; zero means cost estimates are disabled.
 INPUT_USD_PER_MILLION = "0"
 OUTPUT_USD_PER_MILLION = "0"
 
@@ -38,3 +42,24 @@ invocation_logs = false
 [observability.traces]
 enabled = true
 head_sampling_rate = 0
+
+[env.production]
+workers_dev = false
+preview_urls = false
+
+[env.production.vars]
+GEMINI_MODEL = "gemini-3.1-flash-lite"
+GOOGLE_WEB_CLIENT_ID = ""
+APPLE_BUNDLE_ID = "com.shameem.receiptmind"
+ALLOWED_ORIGINS = ""
+SCANS_ENABLED = "true"
+USER_REQUESTS_PER_MINUTE = "6"
+IP_REQUESTS_PER_MINUTE = "30"
+USER_SCANS_PER_MONTH = "50"
+IP_SCANS_PER_DAY = "200"
+INPUT_USD_PER_MILLION = "0"
+OUTPUT_USD_PER_MILLION = "0"
+
+[[env.production.durable_objects.bindings]]
+name = "SCAN_GUARD"
+class_name = "ScanGuard"
