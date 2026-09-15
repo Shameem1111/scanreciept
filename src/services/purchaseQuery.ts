@@ -11,6 +11,13 @@ function matches(value: string, filter?: string): boolean {
   const words = tokens(value);
   return tokens(filter).every(word => words.includes(word));
 }
+function formatDate(value: string): string {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat('en', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(year, month - 1, day));
+}
+function money(centsValue: number): string { return `€${(centsValue / 100).toFixed(2)}`; }
+
 export function cents(value: number): number | null {
   if (!Number.isFinite(value) || value < 0 || value > 1_000_000) return null;
   return Math.round(value * 100);
@@ -32,7 +39,6 @@ function validateQuery(query: PurchaseQuery): void {
 /** Pure local execution. No network, SQL, storage writes or original-file dependency. */
 export function executePurchaseQuery(query: PurchaseQuery, receipts: readonly Receipt[]): PurchaseQueryResult {
   validateQuery(query);
-  // Only the constrained schema can be returned, even if a caller supplies extra fields.
   query = { intent: query.intent, ...(query.product && { product: sanitizeItemText(query.product) }),
     ...(query.merchant && { merchant: sanitizeMerchant(query.merchant) }), ...(query.category && { category: query.category }),
     ...(query.fromDate && { fromDate: query.fromDate }), ...(query.toDate && { toDate: query.toDate }), ...(query.month && { month: query.month }) };
@@ -75,14 +81,40 @@ export function describePurchaseQuery(query: PurchaseQuery): string {
 }
 
 export function summarizePurchaseResult(result: PurchaseQueryResult): string {
-  if (!result.rows.length) return 'No matching purchases. Try the product name printed on your receipt, another merchant, or a wider date range.';
+  if (!result.rows.length) return 'I could not find a matching purchase in your saved receipts.';
   const { query, rows } = result;
-  if (query.intent === 'sum') return `EUR ${(result.totalCents / 100).toFixed(2)} — ${result.basis === 'receipt' ? 'confirmed receipt totals' : 'matching item line totals'}.`;
-  if (query.intent === 'cheapest') return `Lowest recorded line total: EUR ${(rows[0]!.priceCents / 100).toFixed(2)}. ${rows.length > 1 ? 'All tied purchases shown. ' : ''}Compare quantities; these are not unit prices.`;
-  if (query.intent === 'price_history') return 'Price history, oldest first. Recorded line totals with quantities, not unit prices.';
-  if (query.intent === 'last_purchase') return 'Latest purchase date. All matches on that date are shown; purchase times are not recorded.';
-  if (query.intent === 'find_receipt') return `${rows.length} matching receipt(s). Prices below are full receipt totals.`;
-  return `${rows.length} matching purchase line(s), newest first.`;
+  const first = rows[0]!;
+  const subject = query.product ?? (query.category ? query.category.toLowerCase() : 'this');
+
+  if (query.intent === 'last_purchase') {
+    const merchants = [...new Set(rows.map(row => row.merchant))];
+    const merchantText = merchants.length === 1 ? ` at ${merchants[0]}` : '';
+    const amount = rows.reduce((sum, row) => sum + row.priceCents, 0);
+    return `You last bought ${subject} on ${formatDate(first.date)}${merchantText}. The matching purchase total was ${money(amount)}.`;
+  }
+  if (query.intent === 'sum') {
+    const period = query.month ? ` in ${query.month}` : query.fromDate || query.toDate ? ' in that period' : '';
+    return `You spent ${money(result.totalCents)} on ${subject}${period}.`;
+  }
+  if (query.intent === 'cheapest') {
+    return `The cheapest recorded ${query.product} purchase was ${money(first.priceCents)} at ${first.merchant} on ${formatDate(first.date)}.`;
+  }
+  if (query.intent === 'find_receipt') {
+    return rows.length === 1
+      ? `I found one matching receipt from ${first.merchant} on ${formatDate(first.date)}.`
+      : `I found ${rows.length} matching receipts. The newest one is from ${first.merchant} on ${formatDate(first.date)}.`;
+  }
+  if (query.intent === 'price_history') {
+    const oldest = rows[0]!;
+    const newest = rows[rows.length - 1]!;
+    return rows.length === 1
+      ? `I found one recorded ${query.product} purchase: ${money(first.priceCents)} at ${first.merchant} on ${formatDate(first.date)}.`
+      : `I found ${rows.length} recorded ${query.product} purchases. The price went from ${money(oldest.priceCents)} on ${formatDate(oldest.date)} to ${money(newest.priceCents)} on ${formatDate(newest.date)}.`;
+  }
+  if (rows.length === 1) {
+    return `I found one matching purchase: ${first.name} for ${money(first.priceCents)} at ${first.merchant} on ${formatDate(first.date)}.`;
+  }
+  return `I found ${rows.length} matching purchases. The newest was ${first.name} for ${money(first.priceCents)} at ${first.merchant} on ${formatDate(first.date)}.`;
 }
 
 export function preparePurchaseQuestion(question: string, now = new Date()) {
