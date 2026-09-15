@@ -35,11 +35,11 @@ export function parsePurchaseQuery(question: string, now = new Date()): QueryPar
   if (/\b(?:how much|total|sum|spent|spend|cost|costs|wie viel|wieviel|summe|ausgegeben|ausgaben|gekostet|kostet)\b/.test(text)) candidates.push('sum');
   if (/\b(?:price history|price trend|preisverlauf|preisentwicklung)\b/.test(text)) candidates.push('price_history');
   if (/\b(?:cheapest|lowest price|guenstigste\w*|billigste\w*)\b/.test(text)) candidates.push('cheapest');
-  if (/\b(?:last purchase|latest purchase|last buy|last bought|zuletzt|letzte[rns]? kauf|letzten einkauf)\b/.test(text)) candidates.push('last_purchase');
+  const naturalLatestPurchase = /\b(?:last|latest)\b/.test(text) && /\b(?:buy|bought|purchase|purchased|did|when)\b/.test(text);
+  const naturalLatestPurchaseDe = /\b(?:zuletzt|letzte[rns]?)\b/.test(text) && /\b(?:gekauft|kauf|einkauf|wann)\b/.test(text);
+  if (/\b(?:last purchase|latest purchase|last buy|last bought|zuletzt|letzte[rns]? kauf|letzten einkauf)\b/.test(text) || naturalLatestPurchase || naturalLatestPurchaseDe) candidates.push('last_purchase');
   if (/\b(?:receipt|receipts|beleg|belege|kassenbon|quittung)\b/.test(text)) candidates.push('find_receipt');
   if (candidates.length > 1) return fail('Please choose one action: total, list, receipt, price history, cheapest or last purchase.');
-  // A normal purchase question without a special action is a list/search query. This keeps Ask useful for
-  // natural wording such as “Where did I buy milk?”, “When did I buy milk?” or simply “milk”.
   const intent: PurchaseIntent = candidates[0] ?? 'list';
 
   const dates = parseQueryDates(text, now);
@@ -67,7 +67,7 @@ export function parsePurchaseQuery(question: string, now = new Date()): QueryPar
     }
   }
   text = text.replace(/\b(?:price history|price trend|lowest price|last purchase|latest purchase|how much|wie viel|what did i buy|was habe ich)\b/g, ' ')
-    .replace(/\b(?:show|list|find|the|my|me|all|purchases?|bought|buy|did|i|have|on|for|in|during|of|a|an|total|sum|spent|spend|cost|costs|what|when|where|last|cheapest|receipt[s]?|please|category|about)\b/g, ' ')
+    .replace(/\b(?:show|list|find|the|my|me|all|purchases?|purchased|bought|buy|did|i|have|on|for|in|during|of|a|an|total|sum|spent|spend|cost|costs|what|when|where|last|latest|cheapest|receipt[s]?|please|category|about)\b/g, ' ')
     .replace(/\b(?:zeige|zeig|liste|finde|such|suche|mir|bitte|alle|meine|meinen|den|dem|der|die|das|ein|einen|ich|habe|hab|gekauft|kauf|einkaeufe|einkauf|fuer|im|in|am|wieviel|summe|ausgegeben|ausgaben|gekostet|kostet|was|wann|wo|welche|zuletzt|letzte[rns]?|guenstigste\w*|billigste\w*|preisverlauf|preisentwicklung|beleg|belege|kassenbon|quittung|kategorie)\b/g, ' ')
     .replace(/[.,:;]/g, ' ').replace(/\s+/g, ' ').trim();
   if (/\b(?:and|und|to|bis|between|zwischen|from|von|at|bei|since|seit|month|monat)\b/.test(text)) return fail('Please make each filter explicit: product, at/bei merchant, category, and a date or month. ' + queryGuidance);
