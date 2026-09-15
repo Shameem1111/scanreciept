@@ -3,14 +3,17 @@ import { fetch } from 'expo/fetch';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
 import { validPurchaseDate, validPurchaseTime } from './receiptReview';
 import { sanitizeItemText, sanitizeMerchant, sanitizeReceiptNumber } from './privacy';
-import { receiptEndpoint } from './receiptAuth';
+import { receiptAuthorization, receiptEndpoint } from './receiptAuth';
 
 const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other']);
 
 const endpoint = receiptEndpoint;
 const extractionErrors: Record<string, string> = {
+  AUTH_REQUIRED: 'Sign in before scanning or uploading a receipt.',
+  AUTH_INVALID: 'Your receipt sign-in expired or could not be verified. Sign in again and retry.',
+  AUTH_UNAVAILABLE: 'Receipt sign-in verification is temporarily unavailable. Try again shortly.',
   RATE_LIMITED: 'Too many scan requests. Wait a minute before trying again.',
-  SCAN_ALLOWANCE_EXHAUSTED: 'The scan allowance has been reached for this network. Try after it resets.',
+  SCAN_ALLOWANCE_EXHAUSTED: 'Your scan allowance has been reached. Try again after it resets.',
   SCANS_DISABLED: 'Receipt scanning is temporarily paused. Try again later.',
   SERVICE_CONFIG: 'Receipt scanning needs service configuration. Contact the service owner.',
   LIMITER_UNAVAILABLE: 'Receipt scanning is temporarily unavailable. Try again shortly.',
@@ -80,6 +83,9 @@ export async function extractReceipt(asset: ReceiptAsset, onTiming?: (timing: Re
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
+    // Authentication is obtained before reading/uploading receipt bytes so an
+    // unauthenticated client cannot spend backend AI quota.
+    const authorization = await receiptAuthorization();
     const receipt = new ReceiptUploadFile(asset);
     const form = new FormData();
     form.append('receipt', receipt);
@@ -89,7 +95,10 @@ export async function extractReceipt(asset: ReceiptAsset, onTiming?: (timing: Re
     const response = await fetch(endpoint, {
       method: 'POST',
       body: form,
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${authorization}`,
+      },
       redirect: 'error',
       signal: controller.signal,
     });
@@ -99,6 +108,9 @@ export async function extractReceipt(asset: ReceiptAsset, onTiming?: (timing: Re
       const failure = await response.json().catch(() => null) as { code?: unknown } | null;
       if (typeof failure?.code === 'string' && Object.hasOwn(extractionErrors, failure.code)) {
         throw new Error(extractionErrors[failure.code]);
+      }
+      if (response.status === 401) {
+        throw new Error('Your receipt sign-in expired or could not be verified. Sign in again and retry.');
       }
       if (response.status === 502 || response.status === 503) {
         throw new Error(`The receipt AI service could not complete extraction (${response.status}). Please retry. If this continues, the service owner needs to check the backend provider configuration and quota.`);
