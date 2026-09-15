@@ -30,9 +30,9 @@ function PurchaseResult({ row, onReceipt, onHistory }: { row: PurchaseRow; onRec
   </View>;
 }
 
-export function PurchasesScreen() {
+export function PurchasesScreen({ initialCategory }: { initialCategory?: Category }) {
   const { receipts, hydrated } = useReceiptStore();
-  const [filters, setFilters] = useState<PurchaseFilters>({});
+  const [filters, setFilters] = useState<PurchaseFilters>(initialCategory ? { category: initialCategory } : {});
   const [sort, setSort] = useState<PurchaseSort>('newest');
   const [grouping, setGrouping] = useState<PurchaseGrouping>('receipt');
   const [controls, setControls] = useState(false);
