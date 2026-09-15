@@ -39,19 +39,26 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
     if (request.method === 'GET' && url.pathname === '/health') { code = 'OK'; return reply({ ok: true, service: 'receiptmind-api' }); }
     if (request.method !== 'POST' || (url.pathname !== '/receipt/extract' && !sessionRequest)) throw new SafeError('METHOD_NOT_ALLOWED', 405);
-    // Cloudflare sets this at ingress. Never trust X-Forwarded-For.
     const ip = request.headers.get('cf-connecting-ip');
     if (!ip) throw new SafeError('CLIENT_ADDRESS_UNAVAILABLE', 503);
     const ipKey = await identity(env, 'ip', ip);
     await consume(env, ipKey, 'requests', limit(env.IP_REQUESTS_PER_MINUTE), 'minute');
-    const signIn = await verifySignIn(request, env);
-    user = await identity(env, 'user', signIn.identity);
-    await consume(env, user, 'requests', limit(env.USER_REQUESTS_PER_MINUTE), 'minute');
+
+    if (sessionRequest) {
+      const signIn = await verifySignIn(request, env);
+      user = await identity(env, 'user', signIn.identity);
+      await consume(env, user, 'requests', limit(env.USER_REQUESTS_PER_MINUTE), 'minute');
+      if (env.SCANS_ENABLED !== 'true') throw new SafeError('SCANS_DISABLED', 503);
+      if (!env.GEMINI_API_KEY?.trim()) throw new SafeError('PROVIDER_CONFIG', 503);
+      inputPrice = price(env.INPUT_USD_PER_MILLION);
+      outputPrice = price(env.OUTPUT_USD_PER_MILLION);
+      code = 'OK'; return reply({ expiresAt: signIn.expiresAt });
+    }
+
     if (env.SCANS_ENABLED !== 'true') throw new SafeError('SCANS_DISABLED', 503);
     if (!env.GEMINI_API_KEY?.trim()) throw new SafeError('PROVIDER_CONFIG', 503);
     inputPrice = price(env.INPUT_USD_PER_MILLION);
     outputPrice = price(env.OUTPUT_USD_PER_MILLION);
-    if (sessionRequest) { code = 'OK'; return reply({ expiresAt: signIn.expiresAt }); }
     const contentType = request.headers.get('content-type') ?? '';
     if (!/^multipart\/form-data;\s*boundary=/i.test(contentType) || request.headers.has('content-encoding')) throw new SafeError('INVALID_UPLOAD', 400);
     const maximum = 10 * 1024 * 1024 + 64 * 1024;
@@ -67,10 +74,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       (form.has('privacy_mode') && form.get('privacy_mode') !== 'no-payment-data')) throw new SafeError('INVALID_UPLOAD', 400);
     if (entry.size > 10 * 1024 * 1024) throw new SafeError('UPLOAD_TOO_LARGE', 413);
     const mime = await validateFile(entry);
-    // Reserve before provider work. Failed/uncertain calls can incur cost, so
-    // never refund them. Cross-identity reservations are deliberately conservative.
+    // Account-free development mode: protect Gemini usage with the existing
+    // Cloudflare-derived IP quota. Never trust client-provided address headers.
     await consume(env, ipKey, 'scans', limit(env.IP_SCANS_PER_DAY), 'day');
-    await consume(env, user, 'scans', limit(env.USER_SCANS_PER_MONTH), 'month');
     const result = await extractReceipt(entry, mime, env, usage);
     code = 'OK'; return reply(result);
   } catch (error) {
@@ -80,7 +86,6 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
     return reply({ code, error: 'Receipt request could not be completed.' }, 503);
   } finally {
-    // Explicit allowlist: no URL, IP, token, filename, exception, prompt or result.
     console.log(JSON.stringify({ event: 'receipt_request', requestCount: 1, status, code,
       user, durationMs: Date.now() - started, model: env.GEMINI_MODEL || 'gemini-2.5-flash-lite', ...usage,
       estimatedCostUsd: usage.usageReported ? (usage.inputTokens * inputPrice + usage.outputTokens * outputPrice) / 1000000 : null,
