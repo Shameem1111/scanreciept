@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import React, { useEffect, useState } from 'react';
 import { Keyboard, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
@@ -10,6 +11,9 @@ import { ReceiptStoreProvider, useReceiptStore } from './src/store/ReceiptStore'
 import { colors } from './src/theme';
 import { AppPrivacyGate } from './src/components/AppPrivacyGate';
 import { Category } from './src/types';
+
+const runtime = globalThis as typeof globalThis & { Buffer?: typeof Buffer };
+if (!runtime.Buffer) runtime.Buffer = Buffer;
 
 type Tab = 'home' | 'scan' | 'purchases' | 'ask' | 'settings';
 
