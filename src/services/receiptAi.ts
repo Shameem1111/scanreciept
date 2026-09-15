@@ -3,17 +3,14 @@ import { fetch } from 'expo/fetch';
 import { ExtractedReceipt, ReceiptAsset, ReceiptItem } from '../types';
 import { validPurchaseDate, validPurchaseTime } from './receiptReview';
 import { sanitizeItemText, sanitizeMerchant, sanitizeReceiptNumber } from './privacy';
-import { clearReceiptSession, receiptAuthorization, receiptEndpoint } from './receiptAuth';
+import { receiptEndpoint } from './receiptAuth';
 
 const categories = new Set(['Food', 'Medicine', 'Clothing', 'Household', 'Electronics', 'Transport', 'Restaurant', 'Travel', 'Personal Care', 'Entertainment', 'Other']);
 
 const endpoint = receiptEndpoint;
 const extractionErrors: Record<string, string> = {
-  AUTH_REQUIRED: 'Sign in to read receipts, then retry.',
-  AUTH_INVALID: 'Your receipt sign-in expired. Sign out in Settings, sign in and retry.',
-  AUTH_UNAVAILABLE: 'Sign-in verification is temporarily unavailable. Try again shortly.',
   RATE_LIMITED: 'Too many scan requests. Wait a minute before trying again.',
-  SCAN_ALLOWANCE_EXHAUSTED: 'The scan allowance has been reached for this account or network. Try after it resets.',
+  SCAN_ALLOWANCE_EXHAUSTED: 'The scan allowance has been reached for this network. Try after it resets.',
   SCANS_DISABLED: 'Receipt scanning is temporarily paused. Try again later.',
   SERVICE_CONFIG: 'Receipt scanning needs service configuration. Contact the service owner.',
   LIMITER_UNAVAILABLE: 'Receipt scanning is temporarily unavailable. Try again shortly.',
@@ -30,7 +27,6 @@ const extractionErrors: Record<string, string> = {
   INVALID_UPLOAD: 'Receipt upload was invalid. Select the file again and retry.',
 };
 
-// Keep picker metadata even when the cached file has a different name or extension.
 class ReceiptUploadFile extends File {
   constructor(private readonly asset: ReceiptAsset) {
     super(asset.uri);
@@ -70,11 +66,9 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
     throw new Error('Receipt reading is not configured in this build. Configure the receipt extraction service and restart the app, then retry.');
   }
 
-  const token = await receiptAuthorization();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
-    // Expo reads File.bytes() directly without React Native's unsupported Blob conversion.
     const receipt = new ReceiptUploadFile(asset);
     const form = new FormData();
     form.append('receipt', receipt);
@@ -83,14 +77,12 @@ export async function extractReceipt(asset: ReceiptAsset): Promise<ExtractedRece
     const response = await fetch(endpoint, {
       method: 'POST',
       body: form,
-      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      headers: { Accept: 'application/json' },
       redirect: 'error',
       signal: controller.signal,
     });
 
     if (!response.ok) {
-      if (response.status === 401) clearReceiptSession();
-      // Only display known messages, never raw provider errors or receipt contents.
       const failure = await response.json().catch(() => null) as { code?: unknown } | null;
       if (typeof failure?.code === 'string' && Object.hasOwn(extractionErrors, failure.code)) {
         throw new Error(extractionErrors[failure.code]);
