@@ -50,12 +50,6 @@ export function ScanScreen() {
     setExtracted(null);
     setExtractionError(null);
     try {
-      const approved = await new Promise<boolean>(resolve => Alert.alert('Read this receipt with AI?',
-        'This image or PDF will be sent to ReceiptMind?s Cloudflare service and Google Gemini to read purchase details. Google may retain it for abuse monitoring. Only save receipts you are comfortable sending. Your stored originals stay where you choose.', [
-          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Read with AI', onPress: () => resolve(true) },
-        ], { cancelable: false }));
-      if (!approved) return;
       setExtracted(createReviewDraft(await extractReceipt(nextAsset)));
     } catch (error) {
       setExtractionError(error instanceof Error ? error.message : 'Could not read receipt. Please try again.');
@@ -125,7 +119,6 @@ export function ScanScreen() {
       {asset && !asset.uri ? <Card><Text style={styles.small}>Demo receipt selected.</Text></Card> : null}
       {asset?.mimeType === 'application/pdf' ? <Card><Text style={styles.small}>PDF selected: {asset.name}</Text></Card> : null}
 
-      {asset?.uri && !extracted && !busy && !extractionError && <SecondaryButton label="Read receipt with AI" onPress={() => { void runExtraction(asset); }} />}
       {extracted && <ReceiptReview draft={extracted} onChange={setExtracted} onSave={() => save()} busy={busy} />}
       <View style={{ height: 40 }} />
     </ScrollView>

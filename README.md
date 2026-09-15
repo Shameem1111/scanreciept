@@ -6,6 +6,7 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 
 - Native **Scan Receipt** flow using the device camera.
 - Native **Upload Receipt** flow for image/PDF files.
+- Scanned or uploaded receipts are read automatically by the configured extraction service, then shown for review without an extra reading confirmation.
 - Confirm and edit merchant, purchase date, total, item names, quantities, line prices and categories; add or remove items before saving.
 - Missing or ambiguous dates reach review and require a valid date before save. Low/unknown confidence is highlighted; the extractor provides item confidence only, so receipt fields are marked for confirmation.
 - Original item text stays separate from corrections. Item prices are line totals (not unit prices); their sum is calculated in cents, with an explicit option to use it as the confirmed total. The extracted printed total remains separately visible and stored.
