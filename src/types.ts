@@ -35,7 +35,7 @@ export type Receipt = {
   storageReference: string;
   originalFilename: string;
   createdAt: string;
-  source: 'ai' | 'demo';
+  source: 'ai' | 'demo' | 'manual';
 };
 
 export type ExtractedReceipt = Omit<

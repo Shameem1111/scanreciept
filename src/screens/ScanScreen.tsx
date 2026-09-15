@@ -2,10 +2,8 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SecondaryButton } from '../components/Ui';
 import { ReceiptReview } from '../components/ReceiptReview';
-import { receiptAuthorization } from '../services/receiptAuth';
 import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
 import { demoReceipt } from '../data';
-import { extractReceipt } from '../services/receiptAi';
 import { storageProviders } from '../services/storage';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { storageErrorMessage } from '../services/storageErrors';
@@ -19,23 +17,34 @@ export function ScanScreen() {
   const [asset, setAsset] = useState<ReceiptAsset | null>(null);
   const [extracted, setExtracted] = useState<ReviewDraft | null>(null);
   const [busy, setBusy] = useState(false);
-  const [extractionError, setExtractionError] = useState<string | null>(null);
+
+  function startManualReview(nextAsset: ReceiptAsset) {
+    setAsset(nextAsset);
+    setExtracted(createReviewDraft({
+      merchant: '',
+      purchaseDate: '',
+      total: 0,
+      currency: 'EUR',
+      source: 'manual',
+      items: [{
+        id: `item-${Date.now()}`,
+        originalText: '',
+        name: '',
+        category: 'Other',
+        quantity: 1,
+        price: 0,
+        confidence: 0,
+      }],
+    }));
+  }
 
   async function selectReceipt(source: ReceiptInput) {
     if (busy) return;
     setBusy(true);
-    try { await receiptAuthorization(); }
-    catch (error) {
-      setBusy(false);
-      Alert.alert('Sign in to scan', error instanceof Error ? error.message : 'Please sign in again.');
-      return;
-    }
     try {
       const next = await pickReceipt(source);
       if (!next) return;
-      setAsset(next);
-      setExtracted(null);
-      await runExtraction(next);
+      startManualReview(next);
     } catch (error) {
       Alert.alert('Receipt input unavailable', error instanceof ReceiptInputError ? error.message : 'Please try selecting the receipt again.',
         error instanceof ReceiptInputError && error.openSettings ? [
@@ -53,22 +62,8 @@ export function ScanScreen() {
     ]);
   }
 
-  async function runExtraction(nextAsset: ReceiptAsset) {
-    setBusy(true);
-    setExtracted(null);
-    setExtractionError(null);
-    try {
-      setExtracted(createReviewDraft(await extractReceipt(nextAsset)));
-    } catch (error) {
-      setExtractionError(error instanceof Error ? error.message : 'Could not read receipt. Please try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function useDemo() {
     if (!__DEV__) return;
-    setExtractionError(null);
     setAsset({ uri: '', name: 'demo-receipt.jpg', mimeType: 'image/jpeg' });
     setExtracted(createReviewDraft(demoReceipt));
   }
@@ -108,6 +103,10 @@ export function ScanScreen() {
       <Text style={styles.title}>Add receipt</Text>
       <Text style={styles.subtitle}>Use the camera for a new receipt or upload an existing image/PDF.</Text>
 
+      <Card>
+        <Text style={styles.small}>Temporary local mode: automatic reading is paused until the signed Apple/Google build is ready. Scan or upload a receipt, enter its details in the review form, and save it locally.</Text>
+      </Card>
+
       <View style={styles.actions}>
         <PrimaryButton label="📷  Scan Receipt" onPress={() => { void selectReceipt('camera'); }} disabled={busy} />
         <SecondaryButton label="⬆  Upload Receipt" onPress={uploadReceipt} disabled={busy} />
@@ -115,14 +114,6 @@ export function ScanScreen() {
       </View>
 
       {busy && <ActivityIndicator color={colors.primary} size="large" style={{ marginVertical: 24 }} />}
-      {extractionError && (
-        <Card>
-          <Text style={styles.merchant} accessibilityRole="alert">Could not read receipt</Text>
-          <Text style={styles.small}>{extractionError}</Text>
-          {asset?.uri ? <SecondaryButton label="Retry reading receipt" onPress={() => runExtraction(asset)} disabled={busy} /> : null}
-        </Card>
-      )}
-
       {asset?.uri && asset.mimeType.startsWith('image/') ? <Image source={{ uri: asset.uri }} style={styles.preview} resizeMode="cover" /> : null}
       {asset && !asset.uri ? <Card><Text style={styles.small}>Demo receipt selected.</Text></Card> : null}
       {asset?.mimeType === 'application/pdf' ? <Card><Text style={styles.small}>PDF selected: {asset.name}</Text></Card> : null}

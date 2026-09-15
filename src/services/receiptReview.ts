@@ -65,7 +65,7 @@ export function validateReview(draft: ReviewDraft): { errors: Record<string, str
       quantity: quantity ?? 0, price: price ?? 0, confidence: Number.isFinite(item.confidence) ? Math.max(0, Math.min(1, item.confidence)) : 0 };
   });
   return { errors, receipt: Object.keys(errors).length ? null : {
-    merchant, purchaseDate, total: total!, currency: 'EUR', source: draft.source === 'demo' ? 'demo' : 'ai', items,
+    merchant, purchaseDate, total: total!, currency: 'EUR', source: draft.source, items,
     ...(Number.isFinite(draft.printedTotal) && draft.printedTotal >= 0 ? { printedTotal: draft.printedTotal } : {}),
   } };
 }

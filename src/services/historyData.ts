@@ -16,7 +16,7 @@ export function validateHistory(value: unknown): Receipt[] {
       !['local', 'google-drive', 'icloud'].includes(r.storageProvider) ||
       typeof r.storageReference !== 'string' || typeof r.originalFilename !== 'string' ||
       typeof r.createdAt !== 'string' || !Number.isFinite(Date.parse(r.createdAt)) ||
-      r.currency !== 'EUR' || !['ai', 'demo'].includes(r.source) ||
+      r.currency !== 'EUR' || !['ai', 'demo', 'manual'].includes(r.source) ||
       typeof r.merchant !== 'string' || typeof r.purchaseDate !== 'string' ||
       typeof r.total !== 'number' || !Array.isArray(r.items) ||
       r.items.some(i => !i || typeof i.name !== 'string' || typeof i.originalText !== 'string' ||

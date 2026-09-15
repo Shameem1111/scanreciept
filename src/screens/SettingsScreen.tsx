@@ -6,7 +6,6 @@ import { storageProviders } from '../services/storage';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
 import { StorageProviderId } from '../types';
-import { clearReceiptSession, getReceiptAuthProvider } from '../services/receiptAuth';
 import { legalLinks } from '../services/legalLinks';
 
 const options: { id: StorageProviderId; title: string; subtitle: string }[] = [
@@ -59,13 +58,6 @@ export function SettingsScreen() {
       <Text style={styles.title}>Privacy & storage</Text>
       <Text style={styles.subtitle}>Receipt originals stay where you choose. ReceiptMind never needs card or bank information.</Text>
 
-      <SectionTitle>Account</SectionTitle>
-      <Card>
-        <Text style={styles.note}>Signed in with {getReceiptAuthProvider() === 'apple' ? 'Apple' : 'Google'}. Google or Apple handles your password; ReceiptMind never receives or stores it.</Text>
-        <PrimaryButton label="Sign out of ReceiptMind" disabled={busy} onPress={() => Alert.alert('Sign out of ReceiptMind?', 'App menus will be hidden until you sign in again. Local purchase history and original receipts will not be deleted. Storage connections remain unchanged.', [
-          { text: 'Cancel', style: 'cancel' }, { text: 'Sign out', onPress: clearReceiptSession },
-        ])} />
-      </Card>
       <SectionTitle>Privacy information</SectionTitle>
       <Card>
         <Text style={styles.note}>Receipt images go to the extraction service and Google for AI reading. Google may retain prompts for abuse monitoring. Local deletion does not delete originals in your Drive/iCloud or provider-retained data.</Text>
@@ -86,7 +78,7 @@ export function SettingsScreen() {
       </Card>}
       <SectionTitle>Original receipt storage</SectionTitle>
       <Card>
-        <Text style={styles.note}>New accounts use This device by default. App sign-in is separate from receipt storage. Google Drive must be connected explicitly; iCloud Drive access is managed in iPhone Settings.</Text>
+        <Text style={styles.note}>This device is the default. Google Drive must be connected explicitly; iCloud Drive access is managed in iPhone Settings.</Text>
       </Card>
       <View style={{ gap: 10 }}>
         {options.map((option) => {

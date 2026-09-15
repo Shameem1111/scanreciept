@@ -4,10 +4,10 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 
 ## What works now
 
-- A full-screen **Sign in with Google / Sign in with Apple** gate appears before purchase history or app menus are mounted. Google/Apple owns credential and password handling; ReceiptMind keeps only a short-lived verified session in memory.
+- App menus and encrypted local purchase history open without an account while the native Apple/Google app-login build is pending.
 - Native **Scan Receipt** flow using the device camera.
 - Native **Upload Receipt** flow for image/PDF files.
-- Scanned or uploaded receipts are read automatically by the configured extraction service, then shown for review without an extra reading confirmation.
+- Temporary account-free mode opens scanned or uploaded receipts directly in the review form for manual entry and local saving. Automatic AI reading can be restored after a signed Apple/Google build is available.
 - Confirm and edit merchant, purchase date, total, item names, quantities, line prices and categories; add or remove items before saving.
 - Missing or ambiguous dates reach review and require a valid date before save. Low/unknown confidence is highlighted; the extractor provides item confidence only, so receipt fields are marked for confirmation.
 - Original item text stays separate from corrections. Item prices are line totals (not unit prices); their sum is calculated in cents, with an explicit option to use it as the confirmed total. The extracted printed total remains separately visible and stored.
@@ -42,7 +42,7 @@ npm install
 npx expo start
 ```
 
-App authentication and receipt access require a native development or release build; Expo Go does not contain the required provider modules. Google Drive and iCloud setup is described below.
+Automatic AI receipt reading is temporarily paused and still requires a native development or release build with Apple or Google sign-in; Expo Go does not contain the required provider modules. Google Drive and iCloud setup is described below.
 
 Keep dependencies aligned with the installed Expo SDK using `npx expo install --fix`, then run `npx expo-doctor`. React Native 0.86.3 includes Hermes `250829098.0.17`, replacing the affected `250829098.0.14` runtime. SDK 57 uses the New Architecture without the removed `newArchEnabled` configuration field. Rebuild existing native app binaries after updating these dependencies.
 

@@ -8,7 +8,7 @@ import { ScanScreen } from './src/screens/ScanScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ReceiptStoreProvider, useReceiptStore } from './src/store/ReceiptStore';
 import { colors } from './src/theme';
-import { AppAuthenticationGate } from './src/components/AppAuthentication';
+import { AppPrivacyGate } from './src/components/AppPrivacyGate';
 
 type Tab = 'home' | 'scan' | 'purchases' | 'ask' | 'settings';
 
@@ -46,10 +46,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AppAuthenticationGate><ReceiptStoreProvider>
+    <AppPrivacyGate><ReceiptStoreProvider>
       <StatusBar barStyle="dark-content" />
       <AppShell />
-    </ReceiptStoreProvider></AppAuthenticationGate>
+    </ReceiptStoreProvider></AppPrivacyGate>
   );
 }
 

@@ -30,6 +30,10 @@ test('corrections, additions and removals preserve source text and printed total
   draft.items.splice(0, 1); assert.equal(itemTotal(draft.items), 1.1);
   draft.items = []; assert.equal(validateReview(draft).receipt, null);
 });
+test('manual review remains auditable as manual data', () => {
+  const draft = createReviewDraft({ ...extraction(), source: 'manual' });
+  assert.equal(validateReview(draft).receipt.source, 'manual');
+});
 test('invalid dates, merchant, totals, quantity, price and category prevent save', () => {
   for (const patch of [{ merchant: '  ' }, { purchaseDate: '' }, { purchaseDate: '2026-02-30' }, { total: '-1' }, { total: 'Infinity' }, { total: '2.999' }]) {
     assert.equal(validateReview({ ...createReviewDraft(extraction()), ...patch }).receipt, null);

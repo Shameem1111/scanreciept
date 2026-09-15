@@ -1,10 +1,12 @@
 # Enable receipt reading
 
-ReceiptMind shows a Google/Apple sign-in page before any app menu or local
-purchase history is mounted. The provider handles account selection, password
-and recovery; ReceiptMind never asks for or stores the password. The same
-verified session identifies the account for scan limits. It does not grant
-Google Drive storage access, which remains a separate choice in Settings.
+ReceiptMind temporarily opens its app menus and encrypted local purchase
+history without an account while a correctly signed iPhone build is pending.
+Scan and Upload currently open a manual review form so the local core flow can
+be used without an account. Automatic AI receipt reading remains paused until a
+new signed build is available; when restored, it uses a short-lived verified
+Apple/Google session for scan limits. This does not grant Google Drive storage
+access, which remains a separate choice in Settings.
 
 ## Why this build cannot sign in
 
