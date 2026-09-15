@@ -42,7 +42,6 @@ const localProvider: ReceiptStorageProvider = {
   async deleteAll() {
     const directory = new Directory(Paths.document, 'ReceiptMind', 'Receipts');
     if (directory.exists) directory.delete();
-    // Picker/camera imports can leave original copies in this app's cache.
     const cache = new Directory(Paths.cache);
     if (cache.exists) for (const entry of cache.list()) entry.delete();
   },
@@ -92,8 +91,14 @@ export function plannedLocalReference(asset: ReceiptAsset, receiptId: string): s
   return new File(new Directory(Paths.document, 'ReceiptMind', 'Receipts'), `${receiptId}-${safeName}`).uri;
 }
 
-// Accept only originals inside the app's receipt directory, never arbitrary local files.
-// Rebase legacy absolute references when iOS changes the application container path.
+// Returns the already-saved app-local original for an in-app preview. It never copies or exports the file.
+export function localReceiptPreviewUri(reference: string): string | null {
+  const file = localFile(reference);
+  if (!file || !file.exists) return null;
+  const mime = file.type || receiptMimeType(reference);
+  return mime.startsWith('image/') ? file.uri : null;
+}
+
 function localFile(reference: string): File | null {
   if (!reference.startsWith('file://')) return null;
   const marker = '/ReceiptMind/Receipts/';
