@@ -1,8 +1,10 @@
 import { verifySignIn, boundedBody, consume, identity, limit, SafeError, validateFile } from './security';
 import { extractReceipt, ExtractionError, type Env, type Usage } from './index';
 
-function price(value: string): number {
-  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value ?? '') || !Number.isFinite(Number(value))) throw new SafeError('SERVICE_CONFIG', 503);
+// Pricing is used only for observability/cost estimates. Missing or malformed
+// pricing must never disable receipt extraction.
+function price(value: string | undefined): number {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value ?? '') || !Number.isFinite(Number(value))) return 0;
   return Number(value);
 }
 
