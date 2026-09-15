@@ -7,22 +7,18 @@ import { colors } from '../theme';
 import { Category } from '../types';
 
 const categoryColors: Record<Category, string> = {
-  Food: '#2F7B53',
-  Medicine: '#6B5DD3',
-  Clothing: '#D36B9E',
-  Household: '#C7892B',
-  Electronics: '#3E7CB1',
-  Transport: '#5F8D4E',
-  Restaurant: '#C95A49',
-  Travel: '#4A8F9E',
-  'Personal Care': '#A66FB5',
-  Entertainment: '#7A6C5D',
-  Other: '#8A968D',
+  Food: '#DFF4E5',
+  Medicine: '#E9E4FF',
+  Clothing: '#FCE5F0',
+  Household: '#FFF0D6',
+  Electronics: '#E1F0FF',
+  Transport: '#E8F4DC',
+  Restaurant: '#FFE6E0',
+  Travel: '#DFF5F7',
+  'Personal Care': '#F3E5F6',
+  Entertainment: '#F0EADF',
+  Other: '#ECEFED',
 };
-
-function categoryBackground(hex: string): string {
-  return `${hex}22`;
-}
 
 type CategoryShare = { category: Category; amount: number; percentage: number };
 
@@ -101,18 +97,11 @@ export function HomeScreen({ onCategoryPress }: { onCategoryPress?: (category: C
       ) : stats.categoryTotals.map(([category, amount]) => (
         <Pressable key={category} accessibilityRole="button" accessibilityLabel={`Show ${category} purchases`}
           onPress={() => onCategoryPress?.(category)}
-          style={({ pressed }) => [
-            styles.categoryRow,
-            { backgroundColor: categoryBackground(categoryColors[category]), borderColor: categoryColors[category] },
-            pressed && styles.categoryPressed,
-          ]}>
-          <View style={styles.categoryLeft}>
-            <View style={[styles.categoryColorBar, { backgroundColor: categoryColors[category] }]} />
-            <Text style={styles.categoryName}>{category}</Text>
-          </View>
+          style={({ pressed }) => [styles.categoryRow, { backgroundColor: categoryColors[category] }, pressed && styles.categoryPressed]}>
+          <Text style={styles.categoryName}>{category}</Text>
           <View style={styles.categoryRight}>
             <Text style={styles.categoryAmount}>€{amount.toFixed(2)}</Text>
-            <Text style={[styles.chevron, { color: categoryColors[category] }]}>›</Text>
+            <Text style={styles.chevron}>›</Text>
           </View>
         </Pressable>
       ))}
@@ -133,20 +122,18 @@ const styles = StyleSheet.create({
   chartCard: { marginBottom: 22 },
   chartWrap: { alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
   chartCenter: { position: 'absolute', alignItems: 'center' },
-  chartCenterValue: { color: colors.text, fontSize: 26, fontWeight: '900' },
-  chartCenterLabel: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  chartCenterValue: { color: '#111111', fontSize: 26, fontWeight: '900' },
+  chartCenterLabel: { color: '#111111', fontSize: 12, marginTop: 2 },
   legend: { marginTop: 8 },
   legendRow: { flexDirection: 'row', alignItems: 'center', minHeight: 34 },
-  legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 9 },
-  legendCategory: { color: colors.text, fontSize: 14, flex: 1 },
-  legendPercentage: { color: colors.text, fontSize: 14, fontWeight: '800' },
-  categoryRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 12, marginBottom: 8, borderWidth: 1, borderRadius: 14 },
-  categoryPressed: { opacity: 0.55 },
-  categoryLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  categoryColorBar: { width: 5, height: 28, borderRadius: 3, marginRight: 10 },
-  categoryName: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  legendDot: { width: 14, height: 14, borderRadius: 7, marginRight: 9, borderWidth: 1, borderColor: '#D0D0D0' },
+  legendCategory: { color: '#111111', fontSize: 14, flex: 1 },
+  legendPercentage: { color: '#111111', fontSize: 14, fontWeight: '800' },
+  categoryRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 14, borderRadius: 14, marginBottom: 8 },
+  categoryPressed: { opacity: 0.7 },
+  categoryName: { color: '#111111', fontSize: 16, fontWeight: '700' },
   categoryRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  categoryAmount: { color: colors.text, fontSize: 16, fontWeight: '800' },
-  chevron: { fontSize: 24, lineHeight: 24, fontWeight: '700' },
+  categoryAmount: { color: '#111111', fontSize: 16, fontWeight: '800' },
+  chevron: { color: '#111111', fontSize: 24, lineHeight: 24, fontWeight: '700' },
   empty: { color: colors.muted, lineHeight: 22 },
 });
