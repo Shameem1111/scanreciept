@@ -26,6 +26,7 @@
     },
     "android": {
       "package": "com.shameem.receiptmind",
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "CAMERA"
       ],
