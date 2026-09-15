@@ -5,10 +5,6 @@ compatibility_date = "2026-09-13"
 workers_dev = true
 preview_urls = false
 
-# This repository is released manually; a push must not deploy this Worker.
-[build]
-command = "node scripts/manual-release.cjs"
-
 [vars]
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 GOOGLE_WEB_CLIENT_ID = ""
