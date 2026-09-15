@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SecondaryButton } from '../components/Ui';
-import { describePurchaseQuery, executePurchaseQuery, preparePurchaseQuestion, queryGuidance, summarizePurchaseResult } from '../services/purchaseQuery';
+import { executePurchaseQuery, preparePurchaseQuestion, queryGuidance, summarizePurchaseResult } from '../services/purchaseQuery';
 import { PurchaseQuery } from '../services/purchaseQueryTypes';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
@@ -14,15 +14,14 @@ function QueryAnswer({ query, onReceipt }: { query: PurchaseQuery; onReceipt: (i
   const result = useMemo(() => executePurchaseQuery(query, receipts), [query, receipts]);
   const [limit, setLimit] = useState(20);
   return <View style={{ gap: 10 }}>
-    <Text style={styles.bubbleText}>{describePurchaseQuery(query)}</Text>
-    <Text style={styles.bubbleText}>{summarizePurchaseResult(result)}</Text>
+    <Text style={styles.answerText}>{summarizePurchaseResult(result)}</Text>
+    {!!result.rows.length && <Text style={styles.evidenceLabel}>Supporting receipt details</Text>}
     {result.rows.slice(0, limit).map((row, index) => <Pressable key={`${row.receiptId}-${index}`}
       accessibilityRole="button" accessibilityLabel={`View receipt: ${row.name}, ${row.merchant}, ${row.date}`}
-      onPress={() => onReceipt(row.receiptId)} style={{ paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
+      onPress={() => onReceipt(row.receiptId)} style={styles.evidenceRow}>
       <Text style={styles.bubbleText}>{row.name} — EUR {(row.priceCents / 100).toFixed(2)}</Text>
       <Text style={styles.bubbleText}>{row.merchant} · {row.date}</Text>
-      {row.quantity !== undefined && <Text style={styles.bubbleText}>Quantity: {row.quantity} · {row.category} · Line total</Text>}
-      <Text style={{ color: colors.primary, marginTop: 6 }}>View receipt</Text>
+      <Text style={styles.receiptLink}>View receipt</Text>
     </Pressable>)}
     {result.rows.length > limit && <SecondaryButton label={`Show more (${result.rows.length - limit} remaining)`} onPress={() => setLimit(limit + 20)} />}
   </View>;
@@ -98,6 +97,10 @@ const styles = StyleSheet.create({
   assistantBubble: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignSelf: 'flex-start' },
   userBubble: { backgroundColor: colors.primary, alignSelf: 'flex-end' },
   bubbleText: { color: colors.text, lineHeight: 21 },
+  answerText: { color: colors.text, lineHeight: 22, fontSize: 16 },
+  evidenceLabel: { color: '#6F7C73', fontSize: 12, fontWeight: '700', marginTop: 4 },
+  evidenceRow: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.border },
+  receiptLink: { color: colors.primary, marginTop: 6 },
   composer: { flexDirection: 'row', gap: 8, padding: 12, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
   input: { flex: 1, height: 48, borderRadius: 15, backgroundColor: colors.background, paddingHorizontal: 14, color: colors.text },
   send: { width: 48, height: 48, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
