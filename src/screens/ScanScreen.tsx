@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SecondaryButton } from '../components/Ui';
 import { ReceiptReview } from '../components/ReceiptReview';
 import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
@@ -12,7 +12,6 @@ import { colors } from '../theme';
 import { ReceiptAsset } from '../types';
 import { pickReceipt, ReceiptInputError, type ReceiptInput } from '../services/receiptInput';
 import { extractReceipt } from '../services/receiptAi';
-import { isReceiptSignedIn, signInForReceipts } from '../services/receiptAuth';
 
 export function ScanScreen() {
   const { saveReceipt, receipts, storageProvider } = useReceiptStore();
@@ -26,9 +25,6 @@ export function ScanScreen() {
     setExtracted(null);
     setReadingError(null);
     try {
-      if (!isReceiptSignedIn()) {
-        await signInForReceipts(Platform.OS === 'ios' ? 'apple' : 'google');
-      }
       const result = await extractReceipt(nextAsset);
       setExtracted(createReviewDraft(result));
       if (hasDuplicate(receipts, result)) {
@@ -133,7 +129,7 @@ export function ScanScreen() {
       <Text style={styles.subtitle}>Use the camera for a new receipt or upload an existing image/PDF.</Text>
 
       <Card>
-        <Text style={styles.small}>Scan or upload to read the merchant, date, total and purchased items automatically. Then edit the detected details or add extra items before saving. Apple/Google sign-in is required for automatic reading; the receipt is sent securely to the AI service for processing.</Text>
+        <Text style={styles.small}>Scan or upload to read the merchant, date, total and purchased items automatically. No Apple or Google sign-in is required during the current development phase. The receipt is sent securely to the AI service for processing.</Text>
       </Card>
 
       <View style={styles.actions}>
@@ -143,7 +139,7 @@ export function ScanScreen() {
       </View>
 
       {busy && <ActivityIndicator color={colors.primary} size="large" style={{ marginVertical: 24 }} />}
-      {busy && asset && !extracted && <Text style={styles.small}>Reading receipt — complete sign-in if prompted.</Text>}
+      {busy && asset && !extracted && <Text style={styles.small}>Reading receipt…</Text>}
       {asset?.uri && asset.mimeType.startsWith('image/') ? <Image source={{ uri: asset.uri }} style={styles.preview} resizeMode="cover" /> : null}
       {asset && !asset.uri ? <Card><Text style={styles.small}>Demo receipt selected.</Text></Card> : null}
       {asset?.mimeType === 'application/pdf' ? <Card><Text style={styles.small}>PDF selected: {asset.name}</Text></Card> : null}
