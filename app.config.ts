@@ -9,12 +9,29 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   if (projectId && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(projectId)) throw new Error('EAS_PROJECT_ID must be a project UUID.');
   const legalUrl = (value: string | undefined) => {
     if (!value) return false;
-    try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && !url.hostname.endsWith('.invalid') && url.hostname !== 'example.com'; }
-    catch { return false; }
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && !url.username && !url.password && !url.hostname.endsWith('.invalid') && url.hostname !== 'example.com';
+    } catch {
+      return false;
+    }
   };
+  const productionReceiptEndpoint = (value: string | undefined) => {
+    if (!legalUrl(value)) return false;
+    try {
+      const url = new URL(value!);
+      return !url.hostname.endsWith('.workers.dev') && url.pathname === '/receipt/extract';
+    } catch {
+      return false;
+    }
+  };
+
   if (variant === 'production') {
     if (!legalUrl(process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL) || !legalUrl(process.env.EXPO_PUBLIC_DATA_DELETION_URL)) {
       throw new Error('Production requires real HTTPS privacy-policy and data-deletion URLs. Configure the EXPO_PUBLIC_* URL variables.');
+    }
+    if (!productionReceiptEndpoint(process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT)) {
+      throw new Error('Production requires EXPO_PUBLIC_RECEIPT_AI_ENDPOINT on a custom HTTPS domain ending in /receipt/extract; workers.dev is not allowed.');
     }
     // iPhone users can use Apple without configuring Google OAuth.
     const requiredGoogleIds = process.env.EAS_BUILD_PLATFORM === 'ios' ? [] :
