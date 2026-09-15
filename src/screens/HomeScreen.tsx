@@ -20,6 +20,10 @@ const categoryColors: Record<Category, string> = {
   Other: '#8A968D',
 };
 
+function categoryBackground(hex: string): string {
+  return `${hex}22`;
+}
+
 type CategoryShare = { category: Category; amount: number; percentage: number };
 
 function CategoryPieChart({ shares }: { shares: CategoryShare[] }) {
@@ -96,11 +100,19 @@ export function HomeScreen({ onCategoryPress }: { onCategoryPress?: (category: C
         <Card><Text style={styles.empty}>Scan or upload your first receipt to see spending here.</Text></Card>
       ) : stats.categoryTotals.map(([category, amount]) => (
         <Pressable key={category} accessibilityRole="button" accessibilityLabel={`Show ${category} purchases`}
-          onPress={() => onCategoryPress?.(category)} style={({ pressed }) => [styles.categoryRow, pressed && styles.categoryPressed]}>
-          <Text style={styles.categoryName}>{category}</Text>
+          onPress={() => onCategoryPress?.(category)}
+          style={({ pressed }) => [
+            styles.categoryRow,
+            { backgroundColor: categoryBackground(categoryColors[category]), borderColor: categoryColors[category] },
+            pressed && styles.categoryPressed,
+          ]}>
+          <View style={styles.categoryLeft}>
+            <View style={[styles.categoryColorBar, { backgroundColor: categoryColors[category] }]} />
+            <Text style={styles.categoryName}>{category}</Text>
+          </View>
           <View style={styles.categoryRight}>
             <Text style={styles.categoryAmount}>€{amount.toFixed(2)}</Text>
-            <Text style={styles.chevron}>›</Text>
+            <Text style={[styles.chevron, { color: categoryColors[category] }]}>›</Text>
           </View>
         </Pressable>
       ))}
@@ -128,11 +140,13 @@ const styles = StyleSheet.create({
   legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 9 },
   legendCategory: { color: colors.text, fontSize: 14, flex: 1 },
   legendPercentage: { color: colors.text, fontSize: 14, fontWeight: '800' },
-  categoryRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
+  categoryRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 12, marginBottom: 8, borderWidth: 1, borderRadius: 14 },
   categoryPressed: { opacity: 0.55 },
-  categoryName: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  categoryLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  categoryColorBar: { width: 5, height: 28, borderRadius: 3, marginRight: 10 },
+  categoryName: { color: colors.text, fontSize: 16, fontWeight: '700' },
   categoryRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   categoryAmount: { color: colors.text, fontSize: 16, fontWeight: '800' },
-  chevron: { color: colors.primary, fontSize: 24, lineHeight: 24, fontWeight: '700' },
+  chevron: { fontSize: 24, lineHeight: 24, fontWeight: '700' },
   empty: { color: colors.muted, lineHeight: 22 },
 });
