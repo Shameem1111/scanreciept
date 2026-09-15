@@ -30,6 +30,64 @@ function PurchaseResult({ row, onReceipt, onHistory }: { row: PurchaseRow; onRec
   </View>;
 }
 
+function fiveYearsAgoIso(now = new Date()) {
+  const cutoff = new Date(now);
+  cutoff.setFullYear(cutoff.getFullYear() - 5);
+  return cutoff.toISOString().slice(0, 10);
+}
+
+function PriceHistoryGraph({ rows }: { rows: PurchaseRow[] }) {
+  const [width, setWidth] = useState(0);
+  const height = 220;
+  const plotTop = 18;
+  const plotBottom = 38;
+  const plotHeight = height - plotTop - plotBottom;
+  const cutoff = fiveYearsAgoIso();
+  const visibleRows = rows.filter(row => row.date >= cutoff);
+  if (!visibleRows.length) return <View style={styles.graphCard}><Text style={styles.meta}>No saved prices in the past 5 years.</Text></View>;
+
+  const minPrice = Math.min(...visibleRows.map(row => row.priceCents));
+  const maxPrice = Math.max(...visibleRows.map(row => row.priceCents));
+  const range = Math.max(1, maxPrice - minPrice);
+  const startMs = new Date(`${cutoff}T00:00:00`).getTime();
+  const endMs = Date.now();
+  const span = Math.max(1, endMs - startMs);
+  const horizontalPadding = 18;
+  const usableWidth = Math.max(1, width - horizontalPadding * 2);
+  const points = visibleRows.map(row => {
+    const dateMs = new Date(`${row.date}T00:00:00`).getTime();
+    const x = horizontalPadding + Math.max(0, Math.min(1, (dateMs - startMs) / span)) * usableWidth;
+    const y = plotTop + (1 - (row.priceCents - minPrice) / range) * plotHeight;
+    return { row, x, y };
+  });
+
+  return <View style={styles.graphCard}>
+    <View style={styles.graphSummary}>
+      <Text style={styles.name}>Past 5 years</Text>
+      <Text style={styles.meta}>{visibleRows.length} recorded purchase{visibleRows.length === 1 ? '' : 's'}</Text>
+    </View>
+    <View style={styles.graph} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+      <Text style={[styles.graphPriceLabel, { top: 0 }]}>€{(maxPrice / 100).toFixed(2)}</Text>
+      <Text style={[styles.graphPriceLabel, { bottom: 20 }]}>€{(minPrice / 100).toFixed(2)}</Text>
+      {width > 0 && points.slice(1).map((point, index) => {
+        const previous = points[index]!;
+        const dx = point.x - previous.x;
+        const dy = point.y - previous.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        return <View key={`line-${point.row.key}`} style={[styles.graphLine, {
+          width: length, left: previous.x, top: previous.y,
+          transform: [{ translateY: -1 }, { rotateZ: `${angle}deg` }],
+        }]} />;
+      })}
+      {width > 0 && points.map(point => <View key={point.row.key} style={[styles.graphPoint, { left: point.x - 4, top: point.y - 4 }]} />)}
+      <Text style={[styles.graphDateLabel, { left: 12 }]}>{cutoff.slice(0, 4)}</Text>
+      <Text style={[styles.graphDateLabel, { right: 12 }]}>{new Date().getFullYear()}</Text>
+    </View>
+    <Text style={styles.meta}>Each point is a saved line-item price. Quantities can differ; this is not a unit-price comparison.</Text>
+  </View>;
+}
+
 export function PurchasesScreen({ initialCategory }: { initialCategory?: Category }) {
   const { receipts, hydrated } = useReceiptStore();
   const [filters, setFilters] = useState<PurchaseFilters>(initialCategory ? { category: initialCategory } : {});
@@ -44,6 +102,7 @@ export function PurchasesScreen({ initialCategory }: { initialCategory?: Categor
   const merchants = useMemo(() => [...new Map(rows.map(row => [productKey(row.merchant), row.merchant])).values()].sort(), [rows]);
   const selected = rows.find(row => row.key === selectedKey);
   const history = selected ? productPriceHistory(rows, selected) : null;
+  const fiveYearHistory = history ? history.history.filter(row => row.date >= fiveYearsAgoIso()) : [];
   const error = dateRangeError(filters);
   const activeCount = [filters.merchant, filters.category, filters.fromDate, filters.toDate].filter(Boolean).length;
   const setFilter = (patch: Partial<PurchaseFilters>) => setFilters(current => ({ ...current, ...patch }));
@@ -108,16 +167,17 @@ export function PurchasesScreen({ initialCategory }: { initialCategory?: Categor
               <Text style={styles.title}>Price history</Text>
               {selected && history ? <>
                 <Text style={styles.name}>{selected.name}</Text>
-                <Text style={styles.meta}>All saved purchases with this normalized name, oldest first. Browse filters do not limit history. Package sizes and aliases are not inferred.</Text>
-                <Text style={styles.meta}>Recorded line totals, not unit prices. Compare quantities.</Text>
+                <Text style={styles.meta}>Price history shows saved purchases from the past 5 years only. Browse filters do not limit this view.</Text>
+                <PriceHistoryGraph rows={fiveYearHistory} />
                 <Text style={styles.sectionTitle}>Selected purchase</Text>
                 <PurchaseResult row={selected} onReceipt={setReceiptId} />
                 <Text style={styles.sectionTitle}>Cheapest before {selected.date}</Text>
                 <Text style={styles.meta}>Earlier dates only; same-day order is unknown. All lowest-price ties are shown.</Text>
                 {!history.cheapestPrevious.length && <Text style={styles.meta}>No earlier purchase recorded for this product.</Text>}
                 {history.cheapestPrevious.map(row => <PurchaseResult key={row.key} row={row} onReceipt={setReceiptId} />)}
-                <Text style={styles.sectionTitle}>All purchases ({history.history.length})</Text>
-                {history.history.map(row => <PurchaseResult key={row.key} row={row} onReceipt={setReceiptId} />)}
+                <Text style={styles.sectionTitle}>Purchases in past 5 years ({fiveYearHistory.length})</Text>
+                {!fiveYearHistory.length && <Text style={styles.meta}>No saved purchases for this product in the past 5 years.</Text>}
+                {fiveYearHistory.map(row => <PurchaseResult key={row.key} row={row} onReceipt={setReceiptId} />)}
               </> : <Text style={styles.meta}>This purchase is no longer available. Return to purchases to select another.</Text>}
             </ScrollView>
             <View style={styles.toolbar}><Button label="Back to purchases" onPress={() => setSelectedKey(null)} /></View>
@@ -146,4 +206,11 @@ const styles = StyleSheet.create({
   selected: { backgroundColor: colors.primarySoft, borderColor: colors.primary },
   buttonText: { color: colors.primary, fontWeight: '700', fontSize: 15 },
   error: { color: colors.danger, marginVertical: 8 },
+  graphCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 18, padding: 14, marginTop: 16 },
+  graphSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  graph: { height: 220, marginTop: 10, overflow: 'hidden', position: 'relative', borderBottomWidth: 1, borderBottomColor: colors.border },
+  graphLine: { position: 'absolute', height: 2, backgroundColor: colors.primary, transformOrigin: 'left center' },
+  graphPoint: { position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
+  graphPriceLabel: { position: 'absolute', left: 0, color: colors.muted, fontSize: 11, zIndex: 2 },
+  graphDateLabel: { position: 'absolute', bottom: 2, color: colors.muted, fontSize: 11 },
 });
