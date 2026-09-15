@@ -25,13 +25,13 @@ function providerError(status: number): ExtractionError {
 const ALLOWED_CATEGORIES = new Set(['Food','Medicine','Clothing','Household','Electronics','Transport','Restaurant','Travel','Personal Care','Entertainment','Other']);
 
 const sensitivePaymentPatterns: RegExp[] = [
-  /\b(?:IBAN|BIC|SWIFT|CVV|CVC|BANK|BANKING|KONTO|KONTONUMMER|ACCOUNT|EXPIRY|EXPIRATION|G\u00dcLTIG)\b/i,
+  /\b(?:IBAN|BIC|SWIFT|CVV|CVC|BANK|BANKING|KONTO|KONTONUMMER|ACCOUNT|EXPIRY|EXPIRATION|GÜLTIG)\b/i,
   /\b(?:EC[- ]?KARTE|GIROCARD|MAESTRO|MASTERCARD|VISA|AMEX)\b/i,
   /\b(?:AUTH|AUTORISIERUNG|AUTORISATION|AUTHORIZATION|AUTHORISATION|PAYMENT[ -]?REFERENCE|ZAHLUNGSREFERENZ|REFERENZ|TRACE|TRANSACTION[ -]?ID|TERMINAL(?:\s*ID)?|TID|MID)\b/i,
   /\b(?:KARTENNR|KARTENNUMMER|CARD|PAN)\b/i,
   /\bDE\d{2}(?:\s?\d{4}){4}\s?\d{2}\b/i,
   /(?:\d[ -]*?){13,19}/,
-  /[*xX\u2022]{2,}[ -]*\d{2,6}/,
+  /[*xX•]{2,}[ -]*\d{2,6}/,
   /\b[A-Z]{2}\d{2}(?:[ -]?[A-Z0-9]){11,30}\b/i,
 ];
 
@@ -109,9 +109,11 @@ export async function extractReceipt(file:File,mimeType:string,env:Env,usage:Usa
     'Never extract, repeat, infer, classify, or return payment credentials or banking information. Exclude card numbers including masked numbers, card type, IBAN, BIC/SWIFT, account numbers, authorization codes, payment references, terminal IDs, processor identifiers, and online-banking data.',
     'Categorize every purchased line item independently. Keep originalText as printed and provide a normalized product name separately. Preserve German umlauts and ß; do not translate originalText.',
     'Interpret German amounts such as 1.234,56 as 1234.56 and German dates such as 13.09.2026 as 2026-09-13. Extract the printed shop name as merchant, including names in logos when legible.',
-    'Actively inspect the ENTIRE receipt for purchase date and time, including the lower/footer area after payment text. German receipts often print them together, for example 18.05.2026 10:37. For that example return purchaseDate 2026-05-18 and purchaseTime 10:37. Return time as HH:mm or HH:mm:ss at exactly the printed precision; do not invent seconds or timezone.',
-    'Actively inspect the ENTIRE receipt for the SALES receipt number. Accept explicit labels Kassenbon Nr., Kassenbon-Nr., Kassenbonnummer, Bon Nr., Bon-Nr., Bonnummer, Beleg Nr., Beleg-Nr., Belegnummer, Kassenzettel Nr., Receipt No., Receipt Number, or Receipt #. Return only the identifier after the label and preserve leading zeros. Example: Kassenbon Nr. 11656 means receiptNumber is 11656.',
+    'MANDATORY RECEIPT METADATA PASS: before finalizing JSON, visually scan from the very top of the receipt to the very bottom specifically for (1) a printed sales receipt/bon number and (2) the printed transaction date and clock time. These metadata may be far apart and may appear before or after payment text.',
+    'For German receipts, a line such as "Kassenbon Nr. 11656" MUST produce receiptNumber "11656". A line such as "18.05.2026 10:37" MUST produce purchaseDate "2026-05-18" and purchaseTime "10:37". Do not leave these fields empty when those printed values are legible.',
+    'Accept explicit sales-receipt labels Kassenbon Nr., Kassenbon-Nr., Kassenbonnummer, Bon Nr., Bon-Nr., Bonnummer, Beleg Nr., Beleg-Nr., Belegnummer, Kassenzettel Nr., Receipt No., Receipt Number, or Receipt #. Return only the identifier after the label and preserve leading zeros.',
     'The sales receipt number is NOT a payment-processing identifier. Never use Terminal-ID, Terminal Nr., TID, MID, TA-Nr, BNr, VU-Nr, Genehmigungs-Nr, EMV-AID, AID, PAN, card number, authorization code, AS-Proc-Code, Capt.-Ref., payment reference, transaction ID, processor reference, or any identifier from a Kartenzahlung/payment block as receiptNumber. If no explicitly labelled sales receipt number is visible, return an empty receiptNumber.',
+    'Return time as HH:mm or HH:mm:ss at exactly the printed precision; do not invent seconds or timezone. If a date and time are printed together, split them into purchaseDate and purchaseTime.',
     'Recognize Summe/Gesamt/Total and MwSt/USt/VAT. Totals, taxes and payment lines are not purchased items. Also accept non-itemized receipts and card-payment slips: extract merchant, purchase date/time and final purchase amount while excluding all payment credentials and identifiers.',
     'When no purchased line items are printed, return items as an empty array; the app will use merchant and total as one purchase for review. Do not invent unreadable products. Read every amount digit including cents. Item price is the full line total for the quantity. Use low confidence when uncertain.',
     'Return dates as YYYY-MM-DD. ReceiptMind currently supports EUR; return EUR as currency.'
@@ -119,7 +121,7 @@ export async function extractReceipt(file:File,mimeType:string,env:Env,usage:Usa
   const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),PROVIDER_TIMEOUT_MS);
   try {
     const options:RequestInit={method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':env.GEMINI_API_KEY},signal:controller.signal,
-      body:JSON.stringify({systemInstruction:{parts:[{text:prompt}]},contents:[{role:'user',parts:[{text:'Extract all allowed purchase information. Pay special attention to labelled receipt/bon number and printed date/time anywhere on the receipt.'},{inlineData:{mimeType,data:receiptBase64}}]}],generationConfig:{temperature:0,maxOutputTokens:8192,responseMimeType:'application/json',responseJsonSchema:receiptSchema}})};
+      body:JSON.stringify({systemInstruction:{parts:[{text:prompt}]},contents:[{role:'user',parts:[{text:'Extract all allowed purchase information. Before returning JSON, perform the mandatory metadata pass for sales receipt number plus printed date and time.'},{inlineData:{mimeType,data:receiptBase64}}]}],generationConfig:{temperature:0,maxOutputTokens:8192,responseMimeType:'application/json',responseJsonSchema:receiptSchema}})};
     usage.providerAttempts++; let response=await fetch(endpoint,options);
     if([500,502,503,504].includes(response.status)){ await response.body?.cancel(); await new Promise(resolve=>setTimeout(resolve,500)); usage.providerAttempts++; response=await fetch(endpoint,options); }
     if(!response.ok){ await response.body?.cancel(); throw providerError(response.status); }
