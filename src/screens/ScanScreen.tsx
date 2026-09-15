@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, PrimaryButton, SecondaryButton } from '../components/Ui';
 import { ReceiptReview } from '../components/ReceiptReview';
 import { createReviewDraft, ReviewDraft, validateReview } from '../services/receiptReview';
@@ -12,6 +12,7 @@ import { colors } from '../theme';
 import { ReceiptAsset } from '../types';
 import { pickReceipt, ReceiptInputError, type ReceiptInput } from '../services/receiptInput';
 import { extractReceipt, type ReceiptExtractionTiming } from '../services/receiptAi';
+import { isReceiptSignedIn, signInForReceipts } from '../services/receiptAuth';
 
 type MobileScanTiming = ReceiptExtractionTiming & { selectionMs: number; billRenderMs: number; endToEndMs: number };
 
@@ -30,6 +31,9 @@ export function ScanScreen() {
     setScanTiming(null);
     let extractionTiming: ReceiptExtractionTiming | null = null;
     try {
+      if (!isReceiptSignedIn()) {
+        await signInForReceipts(Platform.OS === 'ios' ? 'apple' : 'google');
+      }
       const result = await extractReceipt(nextAsset, (timing) => { extractionTiming = timing; });
       const renderStarted = Date.now();
       setExtracted(createReviewDraft(result));
@@ -93,6 +97,7 @@ export function ScanScreen() {
         ] : undefined);
     } finally { setBusy(false); }
   }
+
   function uploadReceipt() {
     if (busy) return;
     Alert.alert('Upload Receipt', 'Choose a photo or an existing image/PDF file.', [
@@ -146,7 +151,7 @@ export function ScanScreen() {
       <Text style={styles.subtitle}>Use the camera for a new receipt or upload an existing image/PDF.</Text>
 
       <Card>
-        <Text style={styles.small}>Scan or upload to read the merchant, date, total and purchased items automatically. No Apple or Google sign-in is required during the current development phase. The receipt is sent securely to the AI service for processing.</Text>
+        <Text style={styles.small}>Scan or upload to read the merchant, date, total and purchased items automatically. Apple or Google sign-in is requested only when automatic receipt reading is needed. The receipt is sent securely to the AI service for processing.</Text>
       </Card>
 
       <View style={styles.actions}>
