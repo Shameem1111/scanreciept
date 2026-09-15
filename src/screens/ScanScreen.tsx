@@ -11,7 +11,9 @@ import { hasDuplicate } from '../services/historyData';
 import { colors } from '../theme';
 import { ReceiptAsset } from '../types';
 import { pickReceipt, ReceiptInputError, type ReceiptInput } from '../services/receiptInput';
-import { extractReceipt } from '../services/receiptAi';
+import { extractReceipt, type ReceiptExtractionTiming } from '../services/receiptAi';
+
+type MobileScanTiming = ReceiptExtractionTiming & { selectionMs: number; billRenderMs: number; endToEndMs: number };
 
 export function ScanScreen() {
   const { saveReceipt, receipts, storageProvider } = useReceiptStore();
@@ -19,14 +21,25 @@ export function ScanScreen() {
   const [extracted, setExtracted] = useState<ReviewDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [readingError, setReadingError] = useState<string | null>(null);
+  const [scanTiming, setScanTiming] = useState<MobileScanTiming | null>(null);
 
-  async function readReceipt(nextAsset: ReceiptAsset) {
+  async function readReceipt(nextAsset: ReceiptAsset, selectionMs = 0, flowStarted = Date.now()) {
     setAsset(nextAsset);
     setExtracted(null);
     setReadingError(null);
+    setScanTiming(null);
+    let extractionTiming: ReceiptExtractionTiming | null = null;
     try {
-      const result = await extractReceipt(nextAsset);
+      const result = await extractReceipt(nextAsset, (timing) => { extractionTiming = timing; });
+      const renderStarted = Date.now();
       setExtracted(createReviewDraft(result));
+      const billRenderMs = Date.now() - renderStarted;
+      if (__DEV__ && extractionTiming) {
+        const timing = extractionTiming as ReceiptExtractionTiming;
+        const measured: MobileScanTiming = { ...timing, selectionMs, billRenderMs, endToEndMs: Date.now() - flowStarted };
+        setScanTiming(measured);
+        console.info('[ReceiptMind mobile timing]', JSON.stringify(measured));
+      }
       if (hasDuplicate(receipts, result)) {
         Alert.alert('Receipt already available', 'A matching receipt is already in Purchases. Review the existing entry before saving another copy.');
       }
@@ -38,7 +51,8 @@ export function ScanScreen() {
   async function retryReading() {
     if (busy || !asset) return;
     setBusy(true);
-    try { await readReceipt(asset); } finally { setBusy(false); }
+    const started = Date.now();
+    try { await readReceipt(asset, 0, started); } finally { setBusy(false); }
   }
 
   function startManualReview(nextAsset: ReceiptAsset) {
@@ -65,10 +79,12 @@ export function ScanScreen() {
   async function selectReceipt(source: ReceiptInput) {
     if (busy) return;
     setBusy(true);
+    const flowStarted = Date.now();
     try {
       const next = await pickReceipt(source);
       if (!next) return;
-      await readReceipt(next);
+      const selectionMs = Date.now() - flowStarted;
+      await readReceipt(next, selectionMs, flowStarted);
     } catch (error) {
       Alert.alert('Receipt input unavailable', error instanceof ReceiptInputError ? error.message : 'Please try selecting the receipt again.',
         error instanceof ReceiptInputError && error.openSettings ? [
@@ -115,6 +131,7 @@ export function ScanScreen() {
       await saveReceipt(checked.receipt, asset, allowDuplicate);
       setAsset(null);
       setExtracted(null);
+      setScanTiming(null);
       Alert.alert('Receipt saved', 'Purchase items are now searchable. Payment/card/bank details are never added to the purchase database.');
     } catch (error) {
       Alert.alert('Could not save receipt', storageErrorMessage(error, 'Purchase history could not be saved. Free device storage, unlock the device and retry. Check Settings if recovery is required.'));
@@ -148,6 +165,9 @@ export function ScanScreen() {
         <Text accessibilityRole="alert" style={styles.small}>Automatic reading could not finish. {readingError}</Text>
         <SecondaryButton label="Retry automatic reading" onPress={() => { void retryReading(); }} disabled={busy} />
         <SecondaryButton label="Enter details manually" onPress={() => startManualReview(asset)} disabled={busy} />
+      </Card>}
+      {__DEV__ && scanTiming && <Card>
+        <Text style={styles.small}>Scan timing: select {scanTiming.selectionMs} ms · network + Worker {scanTiming.requestMs} ms · parse {scanTiming.responseParseMs} ms · sanitize {scanTiming.sanitizeMs} ms · bill {scanTiming.billRenderMs} ms · total {scanTiming.endToEndMs} ms</Text>
       </Card>}
       {extracted && <ReceiptReview draft={extracted} onChange={setExtracted} onSave={() => save()} busy={busy} />}
       <View style={{ height: 40 }} />
