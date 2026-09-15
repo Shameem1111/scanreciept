@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SecondaryButton } from '../components/Ui';
 import { describePurchaseQuery, executePurchaseQuery, preparePurchaseQuestion, queryGuidance, summarizePurchaseResult } from '../services/purchaseQuery';
@@ -32,6 +32,7 @@ export function AskScreen() {
   const { hydrated } = useReceiptStore();
   const [question, setQuestion] = useState('');
   const [receiptId, setReceiptId] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', text: 'Ask about saved purchases in English or German. All queries run on this device.\n\n' + queryGuidance },
   ]);
@@ -42,16 +43,18 @@ export function AskScreen() {
     setMessages(prev => [...prev, { role: 'user', text: prepared.text },
       { role: 'assistant', text: prepared.guidance ?? '', query: prepared.query }]);
     setQuestion('');
+    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   }
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
       <Modal visible={receiptId !== null} animationType="slide" onRequestClose={() => setReceiptId(null)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
           {receiptId && <ReceiptDetailScreen key={receiptId} receiptId={receiptId} backLabel="Back to Ask" onBack={() => setReceiptId(null)} />}
         </SafeAreaView>
       </Modal>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
         <Text style={styles.title}>Ask</Text>
         {messages.map((message, index) => (
           <View key={index} style={[styles.bubble, message.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
@@ -62,15 +65,18 @@ export function AskScreen() {
       </ScrollView>
       <View style={styles.composer}>
         <TextInput accessibilityLabel="Ask about purchases" value={question} onChangeText={setQuestion} onSubmitEditing={send}
+          onFocus={() => requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))}
           maxLength={500} placeholder={hydrated ? 'Ask about your purchases…' : 'Loading purchases…'}
           placeholderTextColor="#8A968D" style={styles.input} returnKeyType="send" />
-        <Pressable accessibilityRole="button" accessibilityLabel="Send question" disabled={!hydrated || !question.trim()} onPress={send} style={styles.send}><Text style={styles.sendText}>↑</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Send question" disabled={!hydrated || !question.trim()} onPress={send}
+          style={[styles.send, (!hydrated || !question.trim()) && styles.sendDisabled]}><Text style={styles.sendText}>↑</Text></Pressable>
       </View>
     </KeyboardAvoidingView>
   );
 }
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
   content: { padding: 20, paddingTop: 30, gap: 10, flexGrow: 1 },
   title: { fontSize: 30, fontWeight: '900', color: colors.text, marginBottom: 10 },
   bubble: { maxWidth: '86%', borderRadius: 18, padding: 13 },
@@ -80,5 +86,6 @@ const styles = StyleSheet.create({
   composer: { flexDirection: 'row', gap: 8, padding: 12, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
   input: { flex: 1, height: 48, borderRadius: 15, backgroundColor: colors.background, paddingHorizontal: 14, color: colors.text },
   send: { width: 48, height: 48, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  sendDisabled: { opacity: 0.45 },
   sendText: { color: '#fff', fontSize: 24, fontWeight: '800' },
 });
