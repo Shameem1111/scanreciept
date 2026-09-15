@@ -53,10 +53,19 @@ export async function receiptAuthorization(): Promise<string> {
 export async function signInForReceipts(provider: ReceiptAuthProvider): Promise<void> {
   clearReceiptSession();
   const attempt = generation;
+  let selectedProvider = provider;
   let token: string;
   let appleUser: string | undefined;
-  if (provider === 'apple') {
-    if (Platform.OS !== 'ios' || !await AppleAuthentication.isAvailableAsync()) throw new Error('Sign in with Apple is unavailable on this device.');
+
+  if (selectedProvider === 'apple') {
+    const appleAvailable = Platform.OS === 'ios' && await AppleAuthentication.isAvailableAsync();
+    if (!appleAvailable) {
+      if (isReceiptGoogleConfigured()) selectedProvider = 'google';
+      else throw new Error('Apple sign-in is unavailable on this device and Google receipt sign-in is not configured in this build.');
+    }
+  }
+
+  if (selectedProvider === 'apple') {
     try {
       const credential = await AppleAuthentication.signInAsync({ requestedScopes: [] });
       if (!credential.identityToken) throw new Error();
@@ -83,7 +92,7 @@ export async function signInForReceipts(provider: ReceiptAuthProvider): Promise<
     }
     if (typeof result?.expiresAt !== 'number' || !Number.isFinite(result.expiresAt) || result.expiresAt <= Date.now() + 30_000) throw new Error('Sign-in expired. Please try again.');
     if (generation !== attempt) throw new Error('Sign-in was interrupted. Please try again.');
-    session = { token, provider, appleUser, expiresAt: Math.min(result.expiresAt, Date.now() + 3_600_000) };
+    session = { token, provider: selectedProvider, appleUser, expiresAt: Math.min(result.expiresAt, Date.now() + 3_600_000) };
     listeners.forEach(listener => listener());
   } finally { clearTimeout(timer); }
 }
