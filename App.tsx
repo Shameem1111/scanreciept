@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Keyboard, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { AskScreen } from './src/screens/AskScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -23,13 +23,24 @@ const tabs: { id: Tab; icon: string; label: string }[] = [
 function AppShell() {
   const { hydrated, recovery } = useReceiptStore();
   const [tab, setTab] = useState<Tab>('home');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   const screen = !hydrated ? <Text style={{ padding: 24 }}>Loading encrypted history...</Text> : recovery ? <SettingsScreen /> : tab === 'home' ? <HomeScreen /> : tab === 'scan' ? <ScanScreen /> : tab === 'purchases' ? <PurchasesScreen /> : tab === 'ask' ? <AskScreen /> : <SettingsScreen />;
 
   return (
     <SafeAreaView style={styles.safe}>
       <ExpoStatusBar style="dark" />
       <View style={styles.body}>{screen}</View>
-      <View style={styles.tabBar}>
+      {!keyboardVisible && <View style={styles.tabBar}>
         {tabs.map((item) => {
           const active = item.id === tab;
           return (
@@ -39,7 +50,7 @@ function AppShell() {
             </Pressable>
           );
         })}
-      </View>
+      </View>}
     </SafeAreaView>
   );
 }
