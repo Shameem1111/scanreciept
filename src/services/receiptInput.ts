@@ -6,6 +6,11 @@ export type ReceiptInput = 'camera' | 'gallery' | 'file';
 export class ReceiptInputError extends Error {
   constructor(message: string, readonly openSettings = false) { super(message); }
 }
+
+// Receipt photos are text documents, so moderate JPEG compression materially
+// reduces upload/vision latency while retaining enough detail for small print.
+const RECEIPT_IMAGE_QUALITY = 0.65;
+
 export async function pickReceipt(source: ReceiptInput): Promise<ReceiptAsset | null> {
   try {
     if (source === 'file') {
@@ -21,9 +26,11 @@ export async function pickReceipt(source: ReceiptInput): Promise<ReceiptAsset | 
     }
     // The system photo picker grants access to the selected image. No broad
     // gallery, storage, microphone or location permission is requested.
+    // Compress camera/gallery photos before upload; originals selected through
+    // Files/PDF are left untouched so their stored proof remains unchanged.
     const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8, allowsMultipleSelection: false,
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: RECEIPT_IMAGE_QUALITY })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: RECEIPT_IMAGE_QUALITY, allowsMultipleSelection: false,
         preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible });
     if (result.canceled || !result.assets[0]) return null;
     const image = result.assets[0];
