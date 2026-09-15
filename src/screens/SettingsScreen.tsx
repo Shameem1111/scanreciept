@@ -6,9 +6,7 @@ import { storageProviders } from '../services/storage';
 import { useReceiptStore } from '../store/ReceiptStore';
 import { colors } from '../theme';
 import { StorageProviderId } from '../types';
-import { forgetGoogleConnection } from '../services/googleDriveAuth';
-import { useAppLock } from '../components/AppLock';
-import { LOCK_DELAYS } from '../services/appLock';
+import { clearReceiptSession, getReceiptAuthProvider } from '../services/receiptAuth';
 import { legalLinks } from '../services/legalLinks';
 
 const options: { id: StorageProviderId; title: string; subtitle: string }[] = [
@@ -18,14 +16,16 @@ const options: { id: StorageProviderId; title: string; subtitle: string }[] = [
 ];
 
 export function SettingsScreen() {
-  const { lock, state: lockState } = useAppLock();
   const { storageProvider, setStorageProvider, deleteHistory, deleteEverything, exportPurchaseHistory, receipts, recovery, hydrate, hydrated, storageWarning, retryStorageCleanup, connectStorage, disconnectStorage } = useReceiptStore();
   const [busy, setBusy] = useState(false);
-  const [connections, setConnections] = useState<Partial<Record<StorageProviderId, string>>>({});
+  const [connections, setConnections] = useState<Partial<Record<StorageProviderId, { message: string; connected: boolean }>>>({});
   async function refreshConnections() {
     const entries = await Promise.all(Object.values(storageProviders).filter(p => p.connectionStatus).map(async p => {
-      try { return [p.id, await p.connectionStatus!()] as const; }
-      catch { return [p.id, 'Connection unavailable. Retry.'] as const; }
+      try {
+        const [message, connected] = await Promise.all([p.connectionStatus!(), p.isAvailable()]);
+        return [p.id, { message, connected }] as const;
+      }
+      catch { return [p.id, { message: 'Connection unavailable. Retry.', connected: false }] as const; }
     }));
     setConnections(Object.fromEntries(entries));
   }
@@ -46,7 +46,7 @@ export function SettingsScreen() {
       everything ? 'Permanently removes structured history, all ReceiptMind local originals, temporary exports, settings, connected sessions and the encryption key. Google Drive/iCloud originals and copies you exported elsewhere require separate deletion.' :
         'Permanently removes all structured purchase records. All original files and the encryption key stay on this device. Google Drive/iCloud originals stay in your account.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => { void run(everything ? async () => { await deleteEverything(); await lock.load(); } : deleteHistory); } },
+      { text: 'Delete', style: 'destructive', onPress: () => { void run(everything ? deleteEverything : deleteHistory); } },
     ]);
   }
 
@@ -59,23 +59,12 @@ export function SettingsScreen() {
       <Text style={styles.title}>Privacy & storage</Text>
       <Text style={styles.subtitle}>Receipt originals stay where you choose. ReceiptMind never needs card or bank information.</Text>
 
-      <SectionTitle>App lock</SectionTitle>
+      <SectionTitle>Account</SectionTitle>
       <Card>
-        <Text style={styles.note}>Use Face ID, fingerprint or your device passcode to open ReceiptMind. Local history stays encrypted whether app lock is on or off. Locking clears unsaved review edits; finish saving before leaving the app.</Text>
-        <PrimaryButton label={lockState.enabled ? 'Turn off app lock' : 'Enable app lock'} disabled={busy || lockState.busy}
-          onPress={() => { void lock.configure({ enabled: !lockState.enabled, backgroundSeconds: lockState.backgroundSeconds }); }} />
-        {lockState.enabled && <>
-          <Text style={styles.note}>Lock after leaving the app:</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {LOCK_DELAYS.map(seconds => <Pressable key={seconds} accessibilityRole="radio" accessibilityState={{ checked: lockState.backgroundSeconds === seconds }}
-              disabled={lockState.busy || busy} style={[styles.option, lockState.backgroundSeconds === seconds && styles.optionSelected]}
-              onPress={() => { void lock.configure({ enabled: true, backgroundSeconds: seconds }); }}>
-              <Text>{seconds === 0 ? 'Immediately' : seconds < 60 ? `${seconds} seconds` : `${seconds / 60} minutes`}</Text>
-            </Pressable>)}
-          </View>
-          <PrimaryButton label="Lock now" disabled={lockState.busy || busy} onPress={() => lock.lockNow()} />
-        </>}
-        {lockState.error && <Text accessibilityRole="alert" style={styles.blocked}>{lockState.error}</Text>}
+        <Text style={styles.note}>Signed in with {getReceiptAuthProvider() === 'apple' ? 'Apple' : 'Google'}. Google or Apple handles your password; ReceiptMind never receives or stores it.</Text>
+        <PrimaryButton label="Sign out of ReceiptMind" disabled={busy} onPress={() => Alert.alert('Sign out of ReceiptMind?', 'App menus will be hidden until you sign in again. Local purchase history and original receipts will not be deleted. Storage connections remain unchanged.', [
+          { text: 'Cancel', style: 'cancel' }, { text: 'Sign out', onPress: clearReceiptSession },
+        ])} />
       </Card>
       <SectionTitle>Privacy information</SectionTitle>
       <Card>
@@ -97,14 +86,15 @@ export function SettingsScreen() {
       </Card>}
       <SectionTitle>Original receipt storage</SectionTitle>
       <Card>
-        <Text style={styles.note}>Receipt reading requires Google sign-in and has a scan allowance. Sign-in does not select Google Drive storage. Signing out also disconnects Drive on this device; saved history stays available.</Text>
-        <PrimaryButton label="Sign out of Google" disabled={busy} onPress={() => { void run(forgetGoogleConnection); }} />
+        <Text style={styles.note}>New accounts use This device by default. App sign-in is separate from receipt storage. Google Drive must be connected explicitly; iCloud Drive access is managed in iPhone Settings.</Text>
       </Card>
       <View style={{ gap: 10 }}>
         {options.map((option) => {
           const selected = storageProvider === option.id;
           const provider = storageProviders[option.id];
           const ready = provider.isConfigured();
+          const connection = connections[option.id];
+          const connected = option.id === 'local' || connection?.connected === true;
           return (
             <View key={option.id} style={{ gap: 8 }}>
             <Pressable disabled={busy || !hydrated || !!recovery} onPress={() => choose(option.id)} style={[styles.option, selected && styles.optionSelected]}>
@@ -112,17 +102,20 @@ export function SettingsScreen() {
                 <Text style={styles.optionTitle}>{option.title} {selected ? '✓' : ''}</Text>
                 <Text style={styles.optionSubtitle}>{provider.description ?? option.subtitle}</Text>
               </View>
-              <Text style={[styles.status, ready ? styles.ready : styles.setup]}>{ready ? (provider.connectionStatus ? 'Configured' : 'Ready') : 'Setup'}</Text>
+              <Text style={[styles.status, ready && connected ? styles.ready : styles.setup]}>{!ready ? 'Setup' : connected ? (option.id === 'local' ? 'Available' : 'Connected') : 'Not connected'}</Text>
             </Pressable>
-            {provider.connectionStatus && <Text accessibilityLiveRegion="polite" style={styles.note}>{connections[option.id] ?? 'Checking connection...'}</Text>}
-            {provider.connect && <>
-              <PrimaryButton label={`Connect / reconnect ${provider.label}`} disabled={busy || !hydrated} onPress={() => Alert.alert(`Connect ${provider.label}?`, 'Original receipts will upload to your account only after you select this storage option and save a receipt. Originals may contain payment information. Existing receipt references will stay unchanged.', [
+            {provider.connectionStatus && <Text accessibilityLiveRegion="polite" style={styles.note}>{connection?.message ?? 'Checking connection...'}</Text>}
+            {provider.connect && !connected &&
+              <PrimaryButton label={`Connect ${provider.label}`} disabled={busy || !hydrated || !ready} onPress={() => Alert.alert(`Connect ${provider.label}?`, 'Original receipts will upload to your account only after you select this storage option and save a receipt. Originals may contain payment information. Existing receipt references will stay unchanged.', [
                 { text: 'Cancel', style: 'cancel' }, { text: 'Connect', onPress: () => { void run(() => connectStorage(option.id)); } },
-              ])} />
+              ])} />}
+            {provider.disconnect && connected &&
               <PrimaryButton label={`Disconnect ${provider.label}`} disabled={busy || !hydrated || !ready} onPress={() => Alert.alert(`Disconnect ${provider.label}?`, 'Sign out on this device and revoke access when online. Structured history and cloud originals are kept. New receipts will use local storage if this provider was selected.', [
                 { text: 'Cancel', style: 'cancel' }, { text: 'Disconnect', onPress: () => { void run(() => disconnectStorage(option.id)); } },
-              ])} />
-            </>}
+              ])} />}
+            {provider.manageConnection && ready &&
+              <PrimaryButton label={connected ? `Disconnect ${provider.label} in iPhone Settings` : `Connect ${provider.label} in iPhone Settings`}
+                disabled={busy || !hydrated} onPress={() => { void run(provider.manageConnection!); }} />}
             </View>
           );
         })}

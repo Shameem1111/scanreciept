@@ -5,7 +5,8 @@ import { isGoogleConfigured, receiptAuthorization as googleAuthorization } from 
 
 export const receiptEndpoint = process.env.EXPO_PUBLIC_RECEIPT_AI_ENDPOINT?.trim() ||
   'https://receiptmind-api.r7tg4t4tcc.workers.dev/receipt/extract';
-type Session = { token: string; expiresAt: number; appleUser?: string };
+export type ReceiptAuthProvider = 'apple' | 'google';
+type Session = { token: string; expiresAt: number; provider: ReceiptAuthProvider; appleUser?: string };
 // Short-lived credentials stay in memory, never in purchase history or AsyncStorage.
 let session: Session | null = null;
 let generation = 0;
@@ -21,6 +22,12 @@ export function clearReceiptSession() {
 }
 export function isReceiptSignedIn(): boolean {
   return !!session && session.expiresAt > Date.now() + 30_000;
+}
+export function getReceiptAuthProvider(): ReceiptAuthProvider | null {
+  return isReceiptSignedIn() ? session!.provider : null;
+}
+export function getReceiptAuthExpiresAt(): number | null {
+  return isReceiptSignedIn() ? session!.expiresAt : null;
 }
 export function isReceiptGoogleConfigured(): boolean {
   return /^[0-9]+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '') && isGoogleConfigured();
@@ -43,7 +50,7 @@ export async function receiptAuthorization(): Promise<string> {
   if (session !== current || !isReceiptSignedIn()) throw new Error('Sign in again before scanning.');
   return current.token;
 }
-export async function signInForReceipts(provider: 'apple' | 'google'): Promise<void> {
+export async function signInForReceipts(provider: ReceiptAuthProvider): Promise<void> {
   clearReceiptSession();
   const attempt = generation;
   let token: string;
@@ -76,7 +83,7 @@ export async function signInForReceipts(provider: 'apple' | 'google'): Promise<v
     }
     if (typeof result?.expiresAt !== 'number' || !Number.isFinite(result.expiresAt) || result.expiresAt <= Date.now() + 30_000) throw new Error('Sign-in expired. Please try again.');
     if (generation !== attempt) throw new Error('Sign-in was interrupted. Please try again.');
-    session = { token, appleUser, expiresAt: Math.min(result.expiresAt, Date.now() + 3_600_000) };
+    session = { token, provider, appleUser, expiresAt: Math.min(result.expiresAt, Date.now() + 3_600_000) };
     listeners.forEach(listener => listener());
   } finally { clearTimeout(timer); }
 }

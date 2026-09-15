@@ -1,8 +1,10 @@
 # Enable receipt reading
 
-Receipt reading uses the secured ReceiptMind service. Google sign-in identifies
-the account for scan limits; it does not require Google Drive storage access.
-The app reads a selected receipt automatically after authentication.
+ReceiptMind shows a Google/Apple sign-in page before any app menu or local
+purchase history is mounted. The provider handles account selection, password
+and recovery; ReceiptMind never asks for or stores the password. The same
+verified session identifies the account for scan limits. It does not grant
+Google Drive storage access, which remains a separate choice in Settings.
 
 ## Why this build cannot read receipts
 
@@ -70,6 +72,7 @@ For iPhone, use `--platform ios --profile preview`; Apple signing and a register
 test device are required. Production builds require both platform client IDs
 and the legal-page URLs validated by `app.config.ts`.
 
-Select a receipt, complete Google sign-in when needed, then review the extracted
-items. Google sign-in does not grant Drive access unless you separately connect
+Open the app and complete Google or Apple sign-in. The menus then appear and Scan
+is immediately available because original receipt storage defaults to This
+device. Google sign-in does not grant Drive access unless you separately connect
 Drive in Settings. Check an image and a PDF on a physical device before release.

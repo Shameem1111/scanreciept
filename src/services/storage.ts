@@ -18,6 +18,7 @@ export interface ReceiptStorageProvider {
   cleanupTemporaryFiles?(): Promise<void>;
   connect?(): Promise<void>;
   disconnect?(): Promise<void>;
+  manageConnection?(): Promise<void>;
   forgetConnection?(): Promise<void>;
   connectionStatus?(): Promise<string>;
   prepareSave?(asset: ReceiptAsset, receiptId: string): Promise<string>;

@@ -4,6 +4,7 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 
 ## What works now
 
+- A full-screen **Sign in with Google / Sign in with Apple** gate appears before purchase history or app menus are mounted. Google/Apple owns credential and password handling; ReceiptMind keeps only a short-lived verified session in memory.
 - Native **Scan Receipt** flow using the device camera.
 - Native **Upload Receipt** flow for image/PDF files.
 - Scanned or uploaded receipts are read automatically by the configured extraction service, then shown for review without an extra reading confirmation.
@@ -16,9 +17,9 @@ Privacy-first Expo / React Native mobile prototype for Android and iOS.
 - Tap a purchase to see its receipt, extracted item text, categories and original storage provider. Edit saved purchase details without changing the original reference or re-running extraction.
 - View original images/PDFs through the Android file viewer or iOS system preview/open sheet. Missing or disconnected originals show "Original receipt unavailable"; structured history remains available and editable.
 - AES-GCM encrypted local structured purchase history with search, dashboard and constrained English/German purchase queries.
-- Storage-provider selector for **This device / Google Drive / iCloud Drive**.
+- Storage-provider selector for **This device / Google Drive / iCloud Drive**. This device is the default; cloud connection actions reflect the current provider state, with iCloud access managed in iPhone Settings.
 - Privacy filter and data model intentionally exclude card numbers, IBAN/BIC, bank accounts, terminal IDs, authorization codes and payment references.
-- An authenticated Cloudflare Worker verifies Google ID tokens, applies persistent per-user/IP limits and scan allowances, and meters Gemini usage without logging receipts. See [Worker security and setup](backend/receiptmind-worker/README.md) and [manual deployment](backend/receiptmind-worker/DEPLOYMENT.md).
+- An authenticated Cloudflare Worker verifies Google/Apple identity tokens, applies persistent per-user/IP limits and scan allowances, and meters Gemini usage without logging receipts. See [Worker security and setup](backend/receiptmind-worker/README.md) and [manual deployment](backend/receiptmind-worker/DEPLOYMENT.md).
 
 The checked-in mobile configuration defaults to the deployed ReceiptMind Cloudflare Worker. `EXPO_PUBLIC_RECEIPT_AI_ENDPOINT` can override that public URL for another environment; AI-provider secrets remain server-side.
 
@@ -41,7 +42,7 @@ npm install
 npx expo start
 ```
 
-Local receipt features can run in Expo Go. Google Drive and iCloud require a native development or release build; see the Google Drive setup below.
+App authentication and receipt access require a native development or release build; Expo Go does not contain the required provider modules. Google Drive and iCloud setup is described below.
 
 Keep dependencies aligned with the installed Expo SDK using `npx expo install --fix`, then run `npx expo-doctor`. React Native 0.86.3 includes Hermes `250829098.0.17`, replacing the affected `250829098.0.14` runtime. SDK 57 uses the New Architecture without the removed `newArchEnabled` configuration field. Rebuild existing native app binaries after updating these dependencies.
 
@@ -132,7 +133,7 @@ Receipt updates pass through the existing review validation/payment filter and e
 
 The provider uses the native `@react-native-google-signin/google-signin` SDK and Drive v3 directly. Its only requested Drive permission is `https://www.googleapis.com/auth/drive.file`: files created by this app or explicitly granted by the user. It never lists the user's whole Drive or requests `drive`/`drive.readonly`. The native SDK also requests its standard sign-in profile scopes; ReceiptMind does not persist the profile, email or ID token. See [Google's scope guide](https://developers.google.com/workspace/drive/api/guides/api-specific-auth).
 
-In **Settings > Original receipt storage**, choose **Connect / reconnect Google Drive**, complete consent, then select **Google Drive** for future saves. Originals upload to that account's My Drive with generated filenames. No shared folder, public sharing permission, service account or ReceiptMind-owned storage is involved. Originals can contain payment information and Google may index their contents; the structured purchase database still goes through the privacy filter and stays encrypted on the device.
+In **Settings > Original receipt storage**, choose **Connect Google Drive**, complete consent, then select **Google Drive** for future saves. Originals upload to that account's My Drive with generated filenames. No shared folder, public sharing permission, service account or ReceiptMind-owned storage is involved. Originals can contain payment information and Google may index their contents; the structured purchase database still goes through the privacy filter and stays encrypted on the device.
 
 The encrypted receipt reference is `gdrive://<opaque-account-id>/<file-id>`. It contains no token. The account ID prevents accidentally using another account's credentials for an old original. Switching providers or disconnecting never rewrites old references. Reconnect the original account to regain access. Opening validates access/trash status through the API and launches a fixed Google Drive viewer URL without a token; the browser/Drive app may require the same account. Missing files, wrong accounts and revoked permission leave structured history intact.
 
@@ -193,7 +194,7 @@ Before release, compile/sign and install on a physical iPhone. Test PDF/image sa
 - Sensitive-looking payment lines are rejected by both the extraction backend and client sanitizer.
 - Original receipts are not stored by the ReceiptMind backend.
 - No AI secret is shipped in the mobile binary or committed to GitHub.
-- Receipt extraction requires Google sign-in in a native build. Limits and metering run in Cloudflare. The Worker retains no receipt content; Google may retain prompts for abuse monitoring. Review the Worker deployment document before release.
+- Receipt extraction requires Google or Apple sign-in in a native build. Limits and metering run in Cloudflare. The Worker retains no receipt content; Google may retain prompts for abuse monitoring. Review the Worker deployment document before release.
 - If structured records later move to a backend, use per-user row-level access, encryption, and GDPR-compliant retention/deletion policies.
 
 ## Production next steps

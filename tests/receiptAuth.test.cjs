@@ -35,6 +35,8 @@ test('unsigned sessions cannot authorize receipt access; Apple sign-in needs no 
   assert.equal(h.calls.length, 0);
   await h.signInForReceipts('apple');
   assert.equal(h.isReceiptSignedIn(), true);
+  assert.equal(h.getReceiptAuthProvider(), 'apple');
+  assert.equal(h.getReceiptAuthExpiresAt(), h.state.now + 3600000);
   assert.equal(await h.receiptAuthorization(), 'apple-token');
   assert.equal(h.calls[0][1].requestedScopes.length, 0);
   assert.match(h.calls[1][1], /\/receipt\/session$/);
@@ -66,6 +68,8 @@ test('sign-out clears access and notifies the scan screen', async () => {
   h.clearReceiptSession();
   assert.equal(changes, 1);
   assert.equal(h.isReceiptSignedIn(), false);
+  assert.equal(h.getReceiptAuthProvider(), null);
+  assert.equal(h.getReceiptAuthExpiresAt(), null);
   await assert.rejects(h.receiptAuthorization());
   unsubscribe();
 });

@@ -74,17 +74,10 @@
       [
         "expo-secure-store",
         {
-          "configureAndroidBackup": true,
-          "faceIDPermission": "ReceiptMind uses Face ID to unlock your private purchase history when app lock is enabled."
+          "configureAndroidBackup": true
         }
       ],
       "expo-sharing",
-      [
-        "expo-local-authentication",
-        {
-          "faceIDPermission": "ReceiptMind uses Face ID to unlock your private purchase history when app lock is enabled."
-        }
-      ],
       [
         "expo-splash-screen",
         {

@@ -10,7 +10,7 @@ export function ReceiptStoreProvider({ children }: PropsWithChildren) {
   useEffect(() => { void manager.hydrate(); }, [manager]);
   const value: ReceiptStoreValue = { ...state, connectStorage: manager.connectStorage, disconnectStorage: manager.disconnectStorage, retryStorageCleanup: manager.retryStorageCleanup, addReceipt: manager.addReceipt, saveReceipt: manager.saveReceipt,
     updateReceipt: manager.updateReceipt, deleteReceipt: manager.deleteReceipt, setStorageProvider: manager.setStorageProvider,
-    deleteHistory: manager.deleteHistory, deleteEverything: async () => { clearReceiptSession(); await manager.deleteEverything(); },
+    deleteHistory: manager.deleteHistory, deleteEverything: async () => { await manager.deleteEverything(); clearReceiptSession(); },
     exportPurchaseHistory: manager.exportPurchaseHistory, hydrate: manager.hydrate };
   return <ReceiptStoreContext.Provider value={value}>{children}</ReceiptStoreContext.Provider>;
 }

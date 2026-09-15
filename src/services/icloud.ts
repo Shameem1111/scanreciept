@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import type { ReceiptStorageProvider } from './storage';
@@ -40,6 +40,10 @@ export const icloudProvider: ReceiptStorageProvider = {
   description: 'Store originals in your own iCloud Drive on iPhone. Manage sign-in and iCloud Drive access in iPhone Settings.',
   isConfigured: () => !!native(),
   connectionStatus: status,
+  async manageConnection() {
+    try { await Linking.openSettings(); }
+    catch { throw new StorageError('Could not open iPhone Settings. Open Settings manually to change iCloud Drive access.'); }
+  },
   async cleanupTemporaryFiles() {
     if (Platform.OS !== 'ios') return;
     const directory = new Directory(Paths.cache, 'ReceiptMindICloudPreviews');
